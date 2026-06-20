@@ -1,0 +1,646 @@
+{
+  "projects": [
+    {
+      "projectCode": "GZM-2024-001",
+      "projectName": "广州某大型商业综合体项目",
+      "address": "广州市天河区珠江新城",
+      "generalContractor": "中建某局集团有限公司",
+      "supervisor": "广东某监理有限公司",
+      "status": "active",
+      "pouringStatus": "pouring",
+      "isNightPouring": true,
+      "pouringStartTime": "2026-06-20T20:55:59.729Z",
+      "remarks": "核心筒高支模区域，夜间浇筑作业中",
+      "createdBy": "system",
+      "id": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "createdAt": "2026-06-20T20:55:40.753Z",
+      "updatedAt": "2026-06-20T20:55:59.730Z",
+      "deletedAt": null
+    }
+  ],
+  "areas": [
+    {
+      "areaCode": "AREA-A-001",
+      "areaName": "A区核心筒高支模",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "floor": "3-5层",
+      "riskLevel": "critical",
+      "pouringStatus": "pouring",
+      "isNightPouring": true,
+      "pouringStartTime": "2024-06-20T14:00:00.000Z",
+      "description": "核心筒高支模区域，高度12米，跨度18米",
+      "id": "8ab1b3f3-c5a8-41e7-b544-781f1b04a862",
+      "createdAt": "2026-06-20T20:55:40.764Z",
+      "updatedAt": "2026-06-20T20:55:40.764Z",
+      "deletedAt": null
+    },
+    {
+      "areaCode": "AREA-B-001",
+      "areaName": "B区裙楼高支模",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "floor": "2-3层",
+      "riskLevel": "high",
+      "pouringStatus": "not_started",
+      "description": "裙楼高支模区域，高度8米",
+      "id": "d353074b-da62-4987-9521-e8aa4f760df5",
+      "createdAt": "2026-06-20T20:55:40.765Z",
+      "updatedAt": "2026-06-20T20:55:40.765Z",
+      "deletedAt": null
+    }
+  ],
+  "sensors": [
+    {
+      "sensorCode": "SEN-SET-001",
+      "sensorName": "A区沉降传感器1号",
+      "sensorType": "settlement",
+      "areaId": "8ab1b3f3-c5a8-41e7-b544-781f1b04a862",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "installLocation": "A区核心筒3层西北立柱",
+      "status": "online",
+      "warningThreshold": 10,
+      "alarmThreshold": 20,
+      "unit": "mm",
+      "manufacturer": "某监测设备厂商",
+      "installDate": "2024-06-01T00:00:00.000Z",
+      "id": "921a1a2c-4859-44c1-b4ad-201332b7ac08",
+      "createdAt": "2026-06-20T20:55:40.766Z",
+      "updatedAt": "2026-06-20T20:55:40.766Z",
+      "deletedAt": null
+    },
+    {
+      "sensorCode": "SEN-DIS-001",
+      "sensorName": "A区位移传感器1号",
+      "sensorType": "displacement",
+      "areaId": "8ab1b3f3-c5a8-41e7-b544-781f1b04a862",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "installLocation": "A区核心筒3层主梁",
+      "status": "online",
+      "warningThreshold": 8,
+      "alarmThreshold": 15,
+      "unit": "mm",
+      "manufacturer": "某监测设备厂商",
+      "installDate": "2024-06-01T00:00:00.000Z",
+      "id": "795e681a-35a5-4cb8-9241-f331c0a4f006",
+      "createdAt": "2026-06-20T20:55:40.768Z",
+      "updatedAt": "2026-06-20T20:55:40.768Z",
+      "deletedAt": null
+    },
+    {
+      "sensorCode": "SEN-SET-002",
+      "sensorName": "B区沉降传感器1号",
+      "sensorType": "settlement",
+      "areaId": "d353074b-da62-4987-9521-e8aa4f760df5",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "installLocation": "B区裙楼2层立柱",
+      "status": "online",
+      "warningThreshold": 10,
+      "alarmThreshold": 20,
+      "unit": "mm",
+      "manufacturer": "某监测设备厂商",
+      "installDate": "2024-06-05T00:00:00.000Z",
+      "id": "47c83312-3a15-4b87-b99a-d4fcc51d040e",
+      "createdAt": "2026-06-20T20:55:40.769Z",
+      "updatedAt": "2026-06-20T20:55:40.769Z",
+      "deletedAt": null
+    },
+    {
+      "sensorCode": "SEN-INC-001",
+      "sensorName": "A区倾角传感器1号",
+      "sensorType": "inclination",
+      "areaId": "8ab1b3f3-c5a8-41e7-b544-781f1b04a862",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "installLocation": "A区核心筒3层立杆",
+      "status": "online",
+      "warningThreshold": 0.5,
+      "alarmThreshold": 1,
+      "unit": "°",
+      "manufacturer": "某监测设备厂商",
+      "installDate": "2024-06-01T00:00:00.000Z",
+      "id": "c51255b4-bc37-4276-9e81-c2b871b879a5",
+      "createdAt": "2026-06-20T20:55:40.770Z",
+      "updatedAt": "2026-06-20T20:55:40.770Z",
+      "deletedAt": null
+    }
+  ],
+  "alerts": [
+    {
+      "alertCode": "SET-GZM-20-20260621-045559-535",
+      "eventType": "settlement_exceed",
+      "eventTypeName": "沉降超限",
+      "alertLevel": "level1",
+      "alertLevelName": "一级告警",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "areaId": "8ab1b3f3-c5a8-41e7-b544-781f1b04a862",
+      "sensorId": "921a1a2c-4859-44c1-b4ad-201332b7ac08",
+      "sensorCode": "SEN-SET-001",
+      "sensorType": "settlement",
+      "currentValue": 25.5,
+      "thresholdValue": 10,
+      "unit": "mm",
+      "location": "A区核心筒3层西北立柱",
+      "description": "沉降监测值超过预警阈值，需立即关注",
+      "sourceSystem": "default",
+      "sourceEventId": "MON-20240621-0001",
+      "occurTime": "2026-06-20T20:55:59.594Z",
+      "receiveTime": "2026-06-20T20:55:59.626Z",
+      "isNightPouring": true,
+      "pouringStatus": "pouring",
+      "status": "acknowledged",
+      "receiptStatus": "none",
+      "id": "c6007bf3-2092-42eb-88e4-a703822f1c94",
+      "createdAt": "2026-06-20T20:55:59.627Z",
+      "updatedAt": "2026-06-20T20:55:59.708Z",
+      "deletedAt": null,
+      "firstAckTime": "2026-06-20T20:55:59.699Z",
+      "siteContact": "李现场",
+      "siteContactPhone": "13900139000"
+    },
+    {
+      "alertCode": "DIS-GZM-20-20260621-045559-881",
+      "eventType": "displacement_sudden",
+      "eventTypeName": "位移突变",
+      "alertLevel": "level1",
+      "alertLevelName": "一级告警",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "areaId": "8ab1b3f3-c5a8-41e7-b544-781f1b04a862",
+      "sensorId": "921a1a2c-4859-44c1-b4ad-201332b7ac08",
+      "sensorCode": "SEN-SET-001",
+      "sensorType": "settlement",
+      "currentValue": 12.3,
+      "thresholdValue": 8,
+      "unit": "mm",
+      "location": "A区核心筒3层西北立柱",
+      "description": "夜间浇筑期间位移严重超限，超限比例154%",
+      "sourceSystem": "default",
+      "occurTime": "2026-06-20T20:55:59.631Z",
+      "receiveTime": "2026-06-20T20:55:59.641Z",
+      "isNightPouring": true,
+      "pouringStatus": "pouring",
+      "status": "pending",
+      "receiptStatus": "none",
+      "id": "1590246c-f690-49da-ae83-b2d2c327280a",
+      "createdAt": "2026-06-20T20:55:59.641Z",
+      "updatedAt": "2026-06-20T20:55:59.641Z",
+      "deletedAt": null
+    },
+    {
+      "alertCode": "OFF-GZM-20-20260621-045559-642",
+      "eventType": "sensor_offline",
+      "eventTypeName": "传感器离线",
+      "alertLevel": "level1",
+      "alertLevelName": "一级告警",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "areaId": null,
+      "sensorId": null,
+      "unit": null,
+      "location": "广州某大型商业综合体项目",
+      "description": "夜间浇筑期间传感器离线",
+      "sourceSystem": "default",
+      "occurTime": "2026-06-20T20:55:59.645Z",
+      "receiveTime": "2026-06-20T20:55:59.650Z",
+      "isNightPouring": true,
+      "pouringStatus": "pouring",
+      "status": "pending",
+      "receiptStatus": "none",
+      "id": "498a73f9-ad4b-48be-85ce-6168f9fccee4",
+      "createdAt": "2026-06-20T20:55:59.651Z",
+      "updatedAt": "2026-06-20T20:55:59.651Z",
+      "deletedAt": null
+    },
+    {
+      "alertCode": "THR-GZM-20-20260621-045559-547",
+      "eventType": "threshold_exceed",
+      "eventTypeName": "阈值超限",
+      "alertLevel": "level1",
+      "alertLevelName": "一级告警",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "areaId": "8ab1b3f3-c5a8-41e7-b544-781f1b04a862",
+      "sensorId": "921a1a2c-4859-44c1-b4ad-201332b7ac08",
+      "sensorCode": "SEN-SET-001",
+      "sensorType": "settlement",
+      "currentValue": 18,
+      "thresholdValue": 15,
+      "unit": "mm",
+      "location": "A区核心筒3层西北立柱",
+      "description": "超限; 夜间浇筑事件升级为一级",
+      "sourceSystem": "default",
+      "occurTime": "2026-06-20T20:55:59.654Z",
+      "receiveTime": "2026-06-20T20:55:59.662Z",
+      "isNightPouring": true,
+      "pouringStatus": "pouring",
+      "status": "pending",
+      "receiptStatus": "none",
+      "id": "b3814da5-d5e1-430b-aac4-027961f859ad",
+      "createdAt": "2026-06-20T20:55:59.663Z",
+      "updatedAt": "2026-06-20T20:55:59.663Z",
+      "deletedAt": null
+    },
+    {
+      "alertCode": "FLT-GZM-20-20260621-045559-606",
+      "eventType": "sensor_fault",
+      "eventTypeName": "传感器故障",
+      "alertLevel": "level1",
+      "alertLevelName": "一级告警",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "areaId": "8ab1b3f3-c5a8-41e7-b544-781f1b04a862",
+      "sensorId": "921a1a2c-4859-44c1-b4ad-201332b7ac08",
+      "sensorCode": "SEN-SET-001",
+      "sensorType": "settlement",
+      "unit": "mm",
+      "location": "A区核心筒3层西北立柱",
+      "description": "高风险场景传感器故障; 夜间浇筑事件升级为一级",
+      "sourceSystem": "default",
+      "occurTime": "2026-06-20T20:55:59.654Z",
+      "receiveTime": "2026-06-20T20:55:59.669Z",
+      "isNightPouring": true,
+      "pouringStatus": "pouring",
+      "status": "pending",
+      "receiptStatus": "none",
+      "id": "852e04be-024e-4e9e-9c40-d1ca53c73a09",
+      "createdAt": "2026-06-20T20:55:59.671Z",
+      "updatedAt": "2026-06-20T20:55:59.671Z",
+      "deletedAt": null
+    }
+  ],
+  "recipients": [
+    {
+      "name": "张总包",
+      "phone": "13800138001",
+      "role": "general_contractor",
+      "company": "中建某局集团有限公司",
+      "position": "项目总工",
+      "isOnDuty": true,
+      "notificationChannels": {
+        "sms": true,
+        "voice": true,
+        "wechat": true,
+        "email": false
+      },
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "roleName": "总包",
+      "id": "812450b2-a7a3-4c1c-a723-cd2e060f8e31",
+      "createdAt": "2026-06-20T20:55:40.771Z",
+      "updatedAt": "2026-06-20T20:55:59.735Z",
+      "deletedAt": null,
+      "dutyStartTime": "2026-06-20T20:55:59.735Z"
+    },
+    {
+      "name": "李监理",
+      "phone": "13800138002",
+      "role": "supervisor",
+      "company": "广东某监理有限公司",
+      "position": "总监代表",
+      "isOnDuty": true,
+      "notificationChannels": {
+        "sms": true,
+        "voice": true,
+        "wechat": true,
+        "email": false
+      },
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "roleName": "监理",
+      "id": "a9edc319-dfb5-46d4-b1db-1f19569a6531",
+      "createdAt": "2026-06-20T20:55:40.772Z",
+      "updatedAt": "2026-06-20T20:55:40.772Z",
+      "deletedAt": null
+    },
+    {
+      "name": "王工头",
+      "phone": "13800138003",
+      "role": "labor_team",
+      "company": "某劳务有限公司",
+      "position": "劳务班组长",
+      "isOnDuty": true,
+      "notificationChannels": {
+        "sms": true,
+        "voice": true,
+        "wechat": true,
+        "email": false
+      },
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "roleName": "劳务班组",
+      "id": "11d7a8c5-d121-4861-81c1-6f6a326b56cb",
+      "createdAt": "2026-06-20T20:55:40.773Z",
+      "updatedAt": "2026-06-20T20:55:40.773Z",
+      "deletedAt": null
+    },
+    {
+      "name": "刘经理",
+      "phone": "13800138004",
+      "role": "project_manager",
+      "company": "中建某局集团有限公司",
+      "position": "项目经理",
+      "isOnDuty": false,
+      "notificationChannels": {
+        "sms": true,
+        "voice": true,
+        "wechat": true,
+        "email": true
+      },
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "roleName": "项目经理",
+      "id": "175a3d57-f466-4927-93ae-4f43d0fb9fd8",
+      "createdAt": "2026-06-20T20:55:40.774Z",
+      "updatedAt": "2026-06-20T20:55:40.774Z",
+      "deletedAt": null
+    },
+    {
+      "name": "陈安全",
+      "phone": "13800138005",
+      "role": "safety_officer",
+      "company": "中建某局集团有限公司",
+      "position": "安全总监",
+      "isOnDuty": true,
+      "notificationChannels": {
+        "sms": true,
+        "voice": true,
+        "wechat": true,
+        "email": false
+      },
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "roleName": "安全员",
+      "id": "abf2484f-242d-4f7a-beb2-9ebe4fb4ba3f",
+      "createdAt": "2026-06-20T20:55:40.775Z",
+      "updatedAt": "2026-06-20T20:55:40.775Z",
+      "deletedAt": null
+    },
+    {
+      "name": "赵运维",
+      "phone": "13800138006",
+      "role": "device_admin",
+      "company": "某科技有限公司",
+      "position": "设备管理员",
+      "isOnDuty": true,
+      "notificationChannels": {
+        "sms": false,
+        "voice": false,
+        "wechat": true,
+        "email": false
+      },
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "roleName": "设备管理员",
+      "id": "4097dd7e-8252-4002-b6d6-68a305b2ac9b",
+      "createdAt": "2026-06-20T20:55:40.776Z",
+      "updatedAt": "2026-06-20T20:55:40.776Z",
+      "deletedAt": null
+    },
+    {
+      "name": "孙值班",
+      "phone": "13800138007",
+      "role": "duty_officer",
+      "company": "中建某局集团有限公司",
+      "position": "夜间值班员",
+      "isOnDuty": true,
+      "notificationChannels": {
+        "sms": true,
+        "voice": true,
+        "wechat": true,
+        "email": false
+      },
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "roleName": "值班员",
+      "id": "adf593dc-32f7-4061-8aac-3298d3297c7d",
+      "createdAt": "2026-06-20T20:55:40.776Z",
+      "updatedAt": "2026-06-20T20:55:40.776Z",
+      "deletedAt": null
+    }
+  ],
+  "notificationRules": [
+    {
+      "ruleName": "一级告警-全员紧急通知",
+      "alertLevel": "level1",
+      "alertLevelName": "一级告警",
+      "roles": [
+        "general_contractor",
+        "supervisor",
+        "labor_team",
+        "project_manager",
+        "safety_officer",
+        "duty_officer"
+      ],
+      "channels": {
+        "sms": true,
+        "voice": true,
+        "wechat": true,
+        "email": false
+      },
+      "priority": 100,
+      "description": "一级告警：电话语音+短信+企业群，通知所有相关人员",
+      "ruleType": "project_level",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "escalationRules": {
+        "enabled": true,
+        "firstInterval": 10,
+        "secondInterval": 20,
+        "maxEscalations": 3,
+        "escalateToRoles": [
+          "project_manager",
+          "safety_officer"
+        ]
+      },
+      "timeRules": {
+        "workHours": {
+          "start": "08:00",
+          "end": "18:00"
+        },
+        "nightHours": {
+          "start": "18:00",
+          "end": "08:00"
+        },
+        "nightEnhancement": true
+      },
+      "isEnabled": true,
+      "createdBy": "system",
+      "id": "8575ce71-a9da-45b9-b8af-939472e935bb",
+      "createdAt": "2026-06-20T20:55:40.777Z",
+      "updatedAt": "2026-06-20T20:55:40.777Z",
+      "deletedAt": null
+    },
+    {
+      "ruleName": "二级告警-总包监理安全员",
+      "alertLevel": "level2",
+      "alertLevelName": "二级告警",
+      "roles": [
+        "general_contractor",
+        "supervisor",
+        "safety_officer",
+        "duty_officer"
+      ],
+      "channels": {
+        "sms": true,
+        "voice": false,
+        "wechat": true,
+        "email": false
+      },
+      "priority": 50,
+      "description": "二级告警：短信+企业群，通知总包、监理、安全员、值班员",
+      "ruleType": "project_level",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "escalationRules": {
+        "enabled": false,
+        "firstInterval": 10,
+        "secondInterval": 20,
+        "maxEscalations": 3,
+        "escalateToRoles": [
+          "project_manager",
+          "safety_officer"
+        ]
+      },
+      "timeRules": {
+        "workHours": {
+          "start": "08:00",
+          "end": "18:00"
+        },
+        "nightHours": {
+          "start": "18:00",
+          "end": "08:00"
+        },
+        "nightEnhancement": false
+      },
+      "isEnabled": true,
+      "createdBy": "system",
+      "id": "e4374400-9dc0-4236-be13-05a0a0b9bc00",
+      "createdAt": "2026-06-20T20:55:40.779Z",
+      "updatedAt": "2026-06-20T20:55:40.779Z",
+      "deletedAt": null
+    },
+    {
+      "ruleName": "提示类告警-仅设备管理员",
+      "alertLevel": "notice",
+      "alertLevelName": "提示类告警",
+      "roles": [
+        "device_admin"
+      ],
+      "channels": {
+        "sms": false,
+        "voice": false,
+        "wechat": true,
+        "email": false
+      },
+      "priority": 10,
+      "description": "提示类告警：仅企业群通知设备管理员",
+      "ruleType": "project_level",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "escalationRules": {
+        "enabled": false,
+        "firstInterval": 10,
+        "secondInterval": 20,
+        "maxEscalations": 3,
+        "escalateToRoles": [
+          "project_manager",
+          "safety_officer"
+        ]
+      },
+      "timeRules": {
+        "workHours": {
+          "start": "08:00",
+          "end": "18:00"
+        },
+        "nightHours": {
+          "start": "18:00",
+          "end": "08:00"
+        },
+        "nightEnhancement": false
+      },
+      "isEnabled": true,
+      "createdBy": "system",
+      "id": "10d505c7-c578-4d38-8466-4faec8dd7e27",
+      "createdAt": "2026-06-20T20:55:40.779Z",
+      "updatedAt": "2026-06-20T20:55:40.779Z",
+      "deletedAt": null
+    },
+    {
+      "ruleName": "自定义规则-紧急情况通知管理层",
+      "ruleType": "project_level",
+      "projectId": "5b5c0a6f-dc64-4424-b8dd-2034e0c10d0d",
+      "alertLevel": "level1",
+      "alertLevelName": "一级告警",
+      "roles": [
+        "project_manager",
+        "safety_officer"
+      ],
+      "channels": {
+        "sms": true,
+        "voice": true,
+        "wechat": true,
+        "email": true
+      },
+      "escalationRules": {
+        "enabled": true,
+        "firstInterval": 10,
+        "secondInterval": 20,
+        "maxEscalations": 3,
+        "escalateToRoles": [
+          "project_manager",
+          "safety_officer"
+        ]
+      },
+      "timeRules": {
+        "workHours": {
+          "start": "08:00",
+          "end": "18:00"
+        },
+        "nightHours": {
+          "start": "18:00",
+          "end": "08:00"
+        },
+        "nightEnhancement": true
+      },
+      "notifyDuringPouringOnly": false,
+      "isEnabled": true,
+      "priority": 200,
+      "description": "紧急情况时额外通知项目经理和安全员",
+      "createdBy": "default",
+      "id": "be976233-557b-4c2d-90f4-b22b53f2975f",
+      "createdAt": "2026-06-20T20:55:59.741Z",
+      "updatedAt": "2026-06-20T20:55:59.741Z",
+      "deletedAt": null
+    }
+  ],
+  "notifications": [],
+  "receipts": [
+    {
+      "alertId": "c6007bf3-2092-42eb-88e4-a703822f1c94",
+      "notificationId": null,
+      "recipientId": "812450b2-a7a3-4c1c-a723-cd2e060f8e31",
+      "recipientName": "张总包",
+      "recipientPhone": "13800138001",
+      "recipientRole": "general_contractor",
+      "receiptType": "processing",
+      "receiptTypeName": "正在处理",
+      "siteContact": "李现场",
+      "siteContactPhone": "13900139000",
+      "estimatedHandleTime": 30,
+      "remark": "已安排人员前往现场检查，预计30分钟到达",
+      "receiptTime": "2026-06-20T20:55:59.697Z",
+      "receiptIp": "::1",
+      "receiptDevice": "axios/1.18.0",
+      "isFirstReceipt": true,
+      "id": "0b7ec6d0-05c1-468d-9650-43761b2e43fc",
+      "createdAt": "2026-06-20T20:55:59.697Z",
+      "updatedAt": "2026-06-20T20:55:59.697Z",
+      "deletedAt": null
+    },
+    {
+      "alertId": "c6007bf3-2092-42eb-88e4-a703822f1c94",
+      "notificationId": null,
+      "recipientId": "adf593dc-32f7-4061-8aac-3298d3297c7d",
+      "recipientName": "孙值班",
+      "recipientPhone": "13800138007",
+      "recipientRole": "duty_officer",
+      "receiptType": "acknowledged",
+      "receiptTypeName": "已知晓",
+      "siteContact": "王主管",
+      "siteContactPhone": "13900139001",
+      "remark": "已知悉，正在跟进处理进展",
+      "receiptTime": "2026-06-20T20:55:59.706Z",
+      "receiptIp": "::1",
+      "receiptDevice": "axios/1.18.0",
+      "isFirstReceipt": true,
+      "id": "c711b43e-5d92-4349-bef3-c711f7949988",
+      "createdAt": "2026-06-20T20:55:59.706Z",
+      "updatedAt": "2026-06-20T20:55:59.706Z",
+      "deletedAt": null
+    }
+  ]
+}
