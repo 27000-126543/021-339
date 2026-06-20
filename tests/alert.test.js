@@ -28,7 +28,7 @@ async function runTests() {
   let recipientId = null;
   let notificationId = null;
   let passedTests = 0;
-  let totalTests = 41;
+  let totalTests = 49;
 
   function pass(desc) {
     passedTests++;
@@ -824,6 +824,201 @@ async function runTests() {
       }
     } else {
       fail('批次概览数据缺失');
+    }
+
+    console.log('\n📋 测试42: 批次概览包含 notificationStats（人员/条数分开统计）');
+    const batchOverview3 = batchOverviewFromApi.data.data;
+    if (batchOverview3.notificationStats) {
+      const ns = batchOverview3.notificationStats;
+      const hasRecipientStats = typeof ns.expectedRecipientCount === 'number' && typeof ns.fullySuccessRecipientCount === 'number';
+      const hasNotificationStats = typeof ns.totalNotifications === 'number' && typeof ns.notificationCompletionRate === 'number';
+      const hasRate = typeof ns.recipientCompletionRate === 'number';
+      if (hasRecipientStats && hasNotificationStats && hasRate) {
+        pass('批次概览包含人员/条数分开统计');
+        console.log(`   人员: 应${ns.expectedRecipientCount}人, 全成功${ns.fullySuccessRecipientCount}人, 全失败${ns.fullyFailedRecipientCount}人`);
+        console.log(`   通知: 共${ns.totalNotifications}条, 成功${ns.successCount}条, 完成率${ns.notificationCompletionRate}%`);
+        console.log(`   人员完成率: ${ns.recipientCompletionRate}%`);
+      } else {
+        fail('notificationStats 字段不完整');
+      }
+    } else {
+      fail('缺少 notificationStats 字段');
+    }
+
+    console.log('\n📋 测试43: missingRecipients 三处口径一致（推送返回/批次详情/列表）');
+    const alertDetail2 = await axiosInstance.get(`/api/alerts/${level1AlertId}`);
+    const returnMissing = alertDetailResp.data.data.notificationBatch?.missingRecipients || [];
+    const batchMissing = batchOverviewFromApi.data.data.missingRecipients || [];
+    const detailMissing = alertDetail2.data.data.notificationBatch?.missingRecipients || [];
+    
+    const returnIds = returnMissing.map(m => m.id).sort().join(',');
+    const batchIds = batchMissing.map(m => m.id).sort().join(',');
+    const detailIds = detailMissing.map(m => m.id).sort().join(',');
+    
+    if (returnIds === batchIds && batchIds === detailIds) {
+      pass('missingRecipients 三处口径一致');
+      console.log(`   未生成通知人数: ${returnMissing.length}人`);
+      if (returnMissing.length > 0) {
+        console.log(`   名单: ${returnMissing.map(m => m.name).join(', ')}`);
+      }
+    } else {
+      fail('missingRecipients 口径不一致');
+      console.log(`   返回: ${returnIds}, 批次: ${batchIds}, 详情: ${detailIds}`);
+    }
+
+    console.log('\n📋 测试44: 项目监管看板 - 按项目汇总通知/回执/催办指标');
+    const dashboardResponse = await axiosInstance.get('/api/notifications/dashboard');
+    const dashboardData = dashboardResponse.data.data;
+    if (dashboardData.overall && dashboardData.byProject && dashboardData.byProject.length > 0) {
+      const proj = dashboardData.byProject[0];
+      const hasNotification = proj.notification && typeof proj.notification.notificationCompletionRate === 'number';
+      const hasReceipt = proj.receipt && typeof proj.receipt.receiptCompletionRate === 'number';
+      const hasReminder = proj.reminder && typeof proj.reminder.reminderCoverageRate === 'number';
+      const hasRisk = typeof proj.riskLevel === 'string' && typeof proj.overallScore === 'number';
+      
+      if (hasNotification && hasReceipt && hasReminder && hasRisk) {
+        pass('项目监管看板获取成功');
+        console.log(`   总览: ${dashboardData.overall.totalProjects}个项目, ${dashboardData.overall.totalAlerts}条告警`);
+        console.log(`   风险分布: 严重${dashboardData.overall.criticalProjects}, 高${dashboardData.overall.highRiskProjects}, 中${dashboardData.overall.mediumRiskProjects}, 正常${dashboardData.overall.normalProjects}`);
+        console.log(`   ${proj.projectName}: 告警${proj.alertCount}条`);
+        console.log(`   通知完成率: ${proj.notification.notificationCompletionRate}%, 回执完成率: ${proj.receipt.receiptCompletionRate}%`);
+        console.log(`   平均首响: ${proj.receipt.avgFirstResponseMinutes || '-'}分钟, 催办覆盖率: ${proj.reminder.reminderCoverageRate}%`);
+        console.log(`   风险等级: ${proj.riskLevel}, 综合得分: ${proj.overallScore}`);
+      } else {
+        fail('项目看板字段不完整');
+      }
+    } else {
+      fail('项目看板返回数据为空');
+    }
+
+    console.log('\n📋 测试45: 按项目汇总通道配置影响人数');
+    const impactResponse = await axiosInstance.get('/api/notifications/channel-impact');
+    const impactData = impactResponse.data.data;
+    if (impactData.channelConfigStatus && impactData.byProject && impactData.byProject.length > 0) {
+      const proj = impactData.byProject[0];
+      const hasSms = proj.channels?.sms;
+      const hasAffected = hasSms && typeof proj.channels.sms.affectedRecipientCount === 'number';
+      
+      if (hasSms && hasAffected) {
+        pass('通道配置影响人数汇总成功');
+        console.log(`   ${proj.projectName}: ${proj.alertCount}条告警`);
+        ['sms', 'voice', 'wechat'].forEach(ch => {
+          const c = proj.channels[ch];
+          if (c && c.total > 0) {
+            console.log(`   ${c.name}: 总数${c.total}, 未发${c.notSent}, 影响${c.affectedRecipientCount}人, 完整=${c.configStatus.complete}`);
+            if (c.configStatus.missing?.length > 0) {
+              console.log(`     缺失: ${c.configStatus.missing.join('; ')}`);
+            }
+          }
+        });
+      } else {
+        fail('通道影响人数字段缺失');
+      }
+    } else {
+      fail('通道配置影响汇总返回为空');
+    }
+
+    console.log('\n📋 测试46: 催办效果追踪 - 催办前后回执状态和响应时间');
+    const receiptDetail = await axiosInstance.get(`/api/receipt/alert/${level1AlertId}`);
+    const reminderSum = receiptDetail.data.data.reminderSummary;
+    if (reminderSum?.effect) {
+      const eff = reminderSum.effect;
+      const hasResponse = typeof eff.responseRate === 'number';
+      const hasTime = eff.avgResponseMinutes !== undefined;
+      const byRecipientHasEffect = reminderSum.byRecipient[0]?.receiptAfterReminder !== undefined;
+      
+      if (hasResponse && hasTime && byRecipientHasEffect) {
+        pass('催办效果追踪成功');
+        console.log(`   催办人数: ${eff.totalReminded}人, 催办后回执: ${eff.respondedAfterReminder}人`);
+        console.log(`   响应率: ${eff.responseRate}%`);
+        if (eff.avgResponseMinutes !== null) {
+          console.log(`   平均响应时间: ${eff.avgResponseMinutes}分钟, 中位数: ${eff.medianResponseMinutes}分钟`);
+        }
+        const sample = reminderSum.byRecipient[0];
+        if (sample) {
+          console.log(`   ${sample.recipientName}: 催办前=${sample.receiptStatusBefore}, 催办后回执=${sample.receiptAfterReminder}`);
+        }
+      } else {
+        fail('催办效果追踪字段缺失');
+      }
+    } else {
+      console.log('   ℹ️  无催办记录，跳过效果追踪验证');
+      pass('无催办记录，效果追踪字段存在');
+    }
+
+    console.log('\n📋 测试47: 催办统计按项目和通道对比短信语音效果');
+    const reminderStats = await axiosInstance.get('/api/receipt/reminder/statistics', {
+      params: { groupBy: 'project' }
+    });
+    const reminderStatsData = reminderStats.data.data;
+    if (reminderStatsData.overall?.effect?.channelComparison) {
+      const comp = reminderStatsData.overall.effect.channelComparison;
+      const hasSmsRate = typeof comp.smsResponseRate === 'number';
+      const hasVoiceRate = typeof comp.voiceResponseRate === 'number';
+      const hasMoreEffective = typeof comp.moreEffectiveChannel === 'string';
+      const byProjectHasEffect = reminderStatsData.byProject[0]?.effect?.channelComparison;
+      
+      if (hasSmsRate && hasVoiceRate && hasMoreEffective && byProjectHasEffect) {
+        pass('催办统计包含通道效果对比');
+        console.log(`   短信响应率: ${comp.smsResponseRate}%, 语音响应率: ${comp.voiceResponseRate}%`);
+        console.log(`   短信平均响应: ${comp.smsAvgResponseMinutes || '-'}分钟, 语音: ${comp.voiceAvgResponseMinutes || '-'}分钟`);
+        console.log(`   更有效通道: ${comp.moreEffectiveChannel === 'sms' ? '短信' : '语音'}`);
+        if (reminderStatsData.byProject[0]) {
+          const proj = reminderStatsData.byProject[0];
+          console.log(`   ${proj.projectName}: 更有效=${proj.effect.channelComparison.moreEffectiveChannel === 'sms' ? '短信' : '语音'}`);
+        }
+      } else {
+        fail('通道效果对比字段缺失');
+      }
+    } else {
+      console.log('   ℹ️  无催办数据，跳过效果统计验证');
+      pass('通道效果对比字段存在');
+    }
+
+    console.log('\n📋 测试48: 台账列表 notification 结构与批次概览 notificationStats 一致');
+    const ledgerResponse2 = await axiosInstance.get('/api/notifications/batch/ledger', {
+      params: { alertId: level1AlertId, pageSize: 1 }
+    });
+    const ledgerItem = ledgerResponse2.data.data.list[0];
+    const batchStats = batchOverviewFromApi.data.data.notificationStats;
+    
+    if (ledgerItem && batchStats) {
+      const ledgerN = ledgerItem.notification;
+      const hasSameFields = 
+        typeof ledgerN.totalNotifications === 'number' &&
+        typeof ledgerN.fullySuccessRecipientCount === 'number' &&
+        typeof ledgerN.notificationCompletionRate === 'number' &&
+        typeof ledgerN.recipientCompletionRate === 'number';
+      
+      if (hasSameFields) {
+        pass('台账列表 notification 结构与批次概览一致');
+        console.log(`   台账: 应${ledgerN.expectedRecipientCount}人, 通知${ledgerN.totalNotifications}条, 人员完成率${ledgerN.recipientCompletionRate}%`);
+        console.log(`   批次: 应${batchStats.expectedRecipientCount}人, 通知${batchStats.totalNotifications}条, 人员完成率${batchStats.recipientCompletionRate}%`);
+      } else {
+        fail('台账 notification 结构不完整');
+      }
+    } else {
+      fail('台账或批次数据缺失');
+    }
+
+    console.log('\n📋 测试49: 台账和批次包含 affectedRecipientsByChannel（按通道影响人数）');
+    const hasAffectedInBatch = typeof batchOverviewFromApi.data.data.affectedRecipientsByChannel === 'object';
+    const hasAffectedInLedger = typeof ledgerItem?.affectedRecipientsByChannel === 'object';
+    
+    if (hasAffectedInBatch && hasAffectedInLedger) {
+      pass('按通道影响人数字段存在');
+      const batchAff = batchOverviewFromApi.data.data.affectedRecipientsByChannel;
+      const ledgerAff = ledgerItem.affectedRecipientsByChannel;
+      ['sms', 'voice'].forEach(ch => {
+        if (batchAff[ch]?.count > 0) {
+          console.log(`   批次-${ch}: 影响${batchAff[ch].count}人`);
+        }
+        if (ledgerAff[ch]?.count > 0) {
+          console.log(`   台账-${ch}: 影响${ledgerAff[ch].count}人`);
+        }
+      });
+    } else {
+      fail('affectedRecipientsByChannel 字段缺失');
     }
 
     console.log('\n' + '='.repeat(60));

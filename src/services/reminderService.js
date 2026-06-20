@@ -62,7 +62,7 @@ async function submitReminder(reminderData, operatorId = null, operatorName = nu
         reason,
         operatorId,
         operatorName
-      });
+      }, alert);
 
       reminders.push(reminder);
 
@@ -90,13 +90,40 @@ async function submitReminder(reminderData, operatorId = null, operatorName = nu
   };
 }
 
-async function createReminder(data) {
+async function createReminder(data, alert = null) {
   const now = new Date();
+  const { alertId, recipientId } = data;
+
+  let receiptStatusBefore = 'pending';
+  let receiptTimeBefore = null;
+  let receiptTypeBefore = null;
+
+  if (alert) {
+    const { Receipt } = require('../models');
+    const existingReceiptsResult = await Receipt.findAll({
+      where: { alertId, recipientId },
+      order: [['receiptTime', 'DESC']],
+      limit: 1
+    });
+    if (existingReceiptsResult.rows && existingReceiptsResult.rows.length > 0) {
+      const last = existingReceiptsResult.rows[0];
+      receiptStatusBefore = last.receiptType;
+      receiptTimeBefore = last.receiptTime;
+      receiptTypeBefore = last.receiptType;
+    }
+  }
+
   return await Reminder.create({
     ...data,
     id: uuidv4(),
     status: 'pending',
     statusName: REMINDER_STATUS_NAMES.pending,
+    receiptStatusBefore,
+    receiptTimeBefore,
+    receiptTypeBefore,
+    receiptAfterReminder: receiptStatusBefore !== 'pending',
+    receiptTimeAfterReminder: receiptTimeBefore,
+    responseMinutesAfterReminder: null,
     createdAt: now,
     updatedAt: now
   });
@@ -204,9 +231,48 @@ async function getReminderList(params = {}) {
   };
 }
 
+async function syncReminderEffect(reminder) {
+  const { Receipt } = require('../models');
+  const { alertId, recipientId, createdAt, receiptStatusBefore } = reminder;
+
+  if (reminder.receiptAfterReminder && receiptStatusBefore !== 'pending') {
+    return reminder;
+  }
+
+  const allReceiptsResult = await Receipt.findAll({
+    where: { alertId, recipientId },
+    order: [['receiptTime', 'ASC']]
+  });
+  const allReceipts = allReceiptsResult.rows || [];
+
+  const reminderTime = new Date(createdAt).getTime();
+  const receiptsAfter = allReceipts.filter(r => new Date(r.receiptTime).getTime() > reminderTime);
+
+  if (receiptsAfter.length > 0) {
+    const firstAfter = receiptsAfter[0];
+    const receiptTime = new Date(firstAfter.receiptTime).getTime();
+    const responseMinutes = (receiptTime - reminderTime) / (1000 * 60);
+
+    await Reminder.update(reminder.id, {
+      receiptAfterReminder: true,
+      receiptTimeAfterReminder: firstAfter.receiptTime,
+      receiptTypeAfterReminder: firstAfter.receiptType,
+      responseMinutesAfterReminder: Number(responseMinutes.toFixed(2)),
+      updatedAt: new Date()
+    });
+
+    return await Reminder.findByPk(reminder.id);
+  }
+
+  return reminder;
+}
+
 async function getAlertReminderSummary(alertId) {
   const result = await Reminder.findAll({ where: { alertId } });
-  const reminders = result.rows;
+  let reminders = result.rows;
+
+  const syncedReminders = await Promise.all(reminders.map(r => syncReminderEffect(r)));
+  reminders = syncedReminders;
 
   const byRecipient = {};
   reminders.forEach(r => {
@@ -221,7 +287,11 @@ async function getAlertReminderSummary(alertId) {
         successCount: 0,
         lastReminderTime: null,
         lastReminderChannel: null,
-        channels: {}
+        channels: {},
+        receiptStatusBefore: null,
+        receiptAfterReminder: false,
+        receiptTimeAfterReminder: null,
+        responseMinutesAfterReminder: null
       };
     }
     byRecipient[rid].totalCount++;
@@ -232,6 +302,10 @@ async function getAlertReminderSummary(alertId) {
     if (!byRecipient[rid].lastReminderTime || rTime > new Date(byRecipient[rid].lastReminderTime)) {
       byRecipient[rid].lastReminderTime = r.createdAt;
       byRecipient[rid].lastReminderChannel = r.channel;
+      byRecipient[rid].receiptStatusBefore = r.receiptStatusBefore;
+      byRecipient[rid].receiptAfterReminder = r.receiptAfterReminder;
+      byRecipient[rid].receiptTimeAfterReminder = r.receiptTimeAfterReminder;
+      byRecipient[rid].responseMinutesAfterReminder = r.responseMinutesAfterReminder;
     }
     byRecipient[rid].channels[r.channel] = (byRecipient[rid].channels[r.channel] || 0) + 1;
   });
@@ -239,13 +313,37 @@ async function getAlertReminderSummary(alertId) {
   const byChannel = {};
   reminders.forEach(r => {
     if (!byChannel[r.channel]) {
-      byChannel[r.channel] = { total: 0, success: 0, failed: 0, not_sent: 0 };
+      byChannel[r.channel] = { total: 0, success: 0, failed: 0, not_sent: 0, responded: 0, avgResponseMinutes: null };
     }
     byChannel[r.channel].total++;
     if (r.status === 'sent' || r.status === 'delivered') byChannel[r.channel].success++;
     else if (r.status === 'failed') byChannel[r.channel].failed++;
     else if (r.status === 'not_sent') byChannel[r.channel].not_sent++;
+    if (r.receiptAfterReminder && r.receiptStatusBefore === 'pending') byChannel[r.channel].responded++;
   });
+
+  Object.keys(byChannel).forEach(ch => {
+    const channelReminders = reminders.filter(r => r.channel === ch && r.receiptAfterReminder && r.receiptStatusBefore === 'pending' && r.responseMinutesAfterReminder !== null);
+    if (channelReminders.length > 0) {
+      const avg = channelReminders.reduce((sum, r) => sum + r.responseMinutesAfterReminder, 0) / channelReminders.length;
+      byChannel[ch].avgResponseMinutes = Number(avg.toFixed(2));
+    }
+  });
+
+  const pendingBefore = reminders.filter(r => r.receiptStatusBefore === 'pending');
+  const respondedAfter = pendingBefore.filter(r => r.receiptAfterReminder);
+  const responseTimes = respondedAfter.filter(r => r.responseMinutesAfterReminder !== null).map(r => r.responseMinutesAfterReminder);
+  const avgResponse = responseTimes.length > 0 
+    ? Number((responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length).toFixed(2))
+    : null;
+
+  const effectSummary = {
+    totalReminded: pendingBefore.length,
+    respondedAfterReminder: respondedAfter.length,
+    responseRate: pendingBefore.length > 0 ? Math.round((respondedAfter.length / pendingBefore.length) * 100) : 0,
+    avgResponseMinutes: avgResponse,
+    medianResponseMinutes: responseTimes.length > 0 ? Number([...responseTimes].sort((a, b) => a - b)[Math.floor(responseTimes.length / 2)].toFixed(2)) : null
+  };
 
   return {
     totalCount: reminders.length,
@@ -254,7 +352,8 @@ async function getAlertReminderSummary(alertId) {
     notSentCount: reminders.filter(r => r.status === 'not_sent').length,
     recipientCount: Object.keys(byRecipient).length,
     byRecipient: Object.values(byRecipient),
-    byChannel
+    byChannel,
+    effect: effectSummary
   };
 }
 
@@ -267,6 +366,9 @@ async function getReminderStatistics(params = {}) {
 
   const remindersResult = await Reminder.findAll({ where: reminderWhere });
   let allReminders = remindersResult.rows;
+
+  const syncedReminders = await Promise.all(allReminders.map(r => syncReminderEffect(r)));
+  allReminders = syncedReminders;
 
   let alertsFilter = {};
   if (projectId) alertsFilter.projectId = projectId;
@@ -282,7 +384,10 @@ async function getReminderStatistics(params = {}) {
   const calculateStats = (reminders) => {
     const uniqueRecipients = new Set();
     const uniqueAlerts = new Set();
-    const byChannel = { sms: { total: 0, success: 0, failed: 0, not_sent: 0 }, voice: { total: 0, success: 0, failed: 0, not_sent: 0 } };
+    const byChannel = { 
+      sms: { total: 0, success: 0, failed: 0, not_sent: 0, responded: 0, avgResponseMinutes: null, medianResponseMinutes: null, responseRate: 0 }, 
+      voice: { total: 0, success: 0, failed: 0, not_sent: 0, responded: 0, avgResponseMinutes: null, medianResponseMinutes: null, responseRate: 0 } 
+    };
     const byStatus = { pending: 0, sent: 0, delivered: 0, failed: 0, not_sent: 0 };
 
     reminders.forEach(r => {
@@ -293,9 +398,31 @@ async function getReminderStatistics(params = {}) {
         if (r.status === 'sent' || r.status === 'delivered') byChannel[r.channel].success++;
         else if (r.status === 'failed') byChannel[r.channel].failed++;
         else if (r.status === 'not_sent') byChannel[r.channel].not_sent++;
+        if (r.receiptAfterReminder && r.receiptStatusBefore === 'pending') byChannel[r.channel].responded++;
       }
       byStatus[r.status] = (byStatus[r.status] || 0) + 1;
     });
+
+    Object.keys(byChannel).forEach(ch => {
+      const channelPendingBefore = reminders.filter(r => r.channel === ch && r.receiptStatusBefore === 'pending');
+      const channelResponded = channelPendingBefore.filter(r => r.receiptAfterReminder);
+      const responseTimes = channelResponded
+        .filter(r => r.responseMinutesAfterReminder !== null)
+        .map(r => r.responseMinutesAfterReminder);
+      
+      byChannel[ch].responseRate = channelPendingBefore.length > 0 
+        ? Math.round((channelResponded.length / channelPendingBefore.length) * 100) 
+        : 0;
+      
+      if (responseTimes.length > 0) {
+        byChannel[ch].avgResponseMinutes = Number((responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length).toFixed(2));
+        byChannel[ch].medianResponseMinutes = Number([...responseTimes].sort((a, b) => a - b)[Math.floor(responseTimes.length / 2)].toFixed(2));
+      }
+    });
+
+    const pendingBeforeAll = reminders.filter(r => r.receiptStatusBefore === 'pending');
+    const respondedAll = pendingBeforeAll.filter(r => r.receiptAfterReminder);
+    const allResponseTimes = respondedAll.filter(r => r.responseMinutesAfterReminder !== null).map(r => r.responseMinutesAfterReminder);
 
     return {
       totalReminders: reminders.length,
@@ -305,7 +432,25 @@ async function getReminderStatistics(params = {}) {
       failedCount: reminders.filter(r => r.status === 'failed').length,
       notSentCount: reminders.filter(r => r.status === 'not_sent').length,
       byChannel,
-      byStatus
+      byStatus,
+      effect: {
+        totalReminded: pendingBeforeAll.length,
+        respondedAfterReminder: respondedAll.length,
+        responseRate: pendingBeforeAll.length > 0 ? Math.round((respondedAll.length / pendingBeforeAll.length) * 100) : 0,
+        avgResponseMinutes: allResponseTimes.length > 0 
+          ? Number((allResponseTimes.reduce((a, b) => a + b, 0) / allResponseTimes.length).toFixed(2))
+          : null,
+        medianResponseMinutes: allResponseTimes.length > 0 
+          ? Number([...allResponseTimes].sort((a, b) => a - b)[Math.floor(allResponseTimes.length / 2)].toFixed(2))
+          : null,
+        channelComparison: {
+          smsResponseRate: byChannel.sms.responseRate,
+          voiceResponseRate: byChannel.voice.responseRate,
+          smsAvgResponseMinutes: byChannel.sms.avgResponseMinutes,
+          voiceAvgResponseMinutes: byChannel.voice.avgResponseMinutes,
+          moreEffectiveChannel: byChannel.sms.responseRate >= byChannel.voice.responseRate ? 'sms' : 'voice'
+        }
+      }
     };
   };
 
@@ -338,6 +483,7 @@ module.exports = {
   REMINDER_CHANNEL_NAMES,
   REMINDER_STATUS_NAMES,
   submitReminder,
+  syncReminderEffect,
   getReminderList,
   getAlertReminderSummary,
   getReminderStatistics

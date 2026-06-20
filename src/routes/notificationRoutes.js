@@ -7,7 +7,9 @@ const {
   getNotificationList,
   getChannelConfig,
   getNotificationBatchOverview,
-  getNotificationBatchLedger
+  getNotificationBatchLedger,
+  getProjectDashboard,
+  getChannelConfigImpactByProject
 } = require('../services/notificationService');
 
 router.get('/channels/config', apiKeyAuth, asyncHandler(async (req, res) => {
@@ -39,6 +41,37 @@ router.get('/batch/ledger', apiKeyAuth, asyncHandler(async (req, res) => {
   };
 
   const result = await getNotificationBatchLedger(params);
+
+  res.json({
+    success: true,
+    data: result
+  });
+}));
+
+router.get('/dashboard', apiKeyAuth, asyncHandler(async (req, res) => {
+  const params = {
+    projectId: req.query.projectId,
+    startTime: req.query.startTime,
+    endTime: req.query.endTime,
+    alertLevel: req.query.alertLevel
+  };
+
+  const result = await getProjectDashboard(params);
+
+  res.json({
+    success: true,
+    data: result
+  });
+}));
+
+router.get('/channel-impact', apiKeyAuth, asyncHandler(async (req, res) => {
+  const params = {
+    projectId: req.query.projectId,
+    startTime: req.query.startTime,
+    endTime: req.query.endTime
+  };
+
+  const result = await getChannelConfigImpactByProject(params);
 
   res.json({
     success: true,
