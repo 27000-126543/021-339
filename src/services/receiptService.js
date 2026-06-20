@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { Op } = require('../config/database');
-const { Receipt, Alert, Notification, Recipient, loadAssociations } = require('../models');
+const { Receipt, Alert, Notification, Recipient, Project, loadAssociations } = require('../models');
 const { updateAlertReceiptStatus } = require('./notificationService');
 const logger = require('../config/logger');
 require('dotenv').config();
@@ -256,84 +256,181 @@ async function getAlertReceipts(alertId) {
   }));
 
   const notificationsResult = await Notification.findAll({
-    where: { alertId }
+    where: { alertId },
+    order: [['createdAt', 'ASC']]
   });
   const notifications = notificationsResult.rows;
 
-  const receiptStatus = {
+  const notificationSummary = {
     total: notifications.length,
-    acknowledged: notifications.filter(n => n.receiptStatus === 'acknowledged').length,
-    processing: notifications.filter(n => n.receiptStatus === 'processing').length,
-    falseAlarm: notifications.filter(n => n.receiptStatus === 'false_alarm').length,
-    pending: notifications.filter(n => n.receiptStatus === 'none').length
+    byChannel: {},
+    byStatus: {}
   };
+  notifications.forEach(n => {
+    notificationSummary.byChannel[n.channel] = (notificationSummary.byChannel[n.channel] || 0) + 1;
+    notificationSummary.byStatus[n.status] = (notificationSummary.byStatus[n.status] || 0) + 1;
+  });
+
+  const uniqueRecipients = new Set(notifications.map(n => n.recipientId));
+  const receiptedRecipients = new Set(receipts.map(r => r.recipientId));
+
+  const receiptStatus = {
+    totalRecipients: uniqueRecipients.size,
+    totalNotifications: notifications.length,
+    receiptedCount: receiptedRecipients.size,
+    pendingCount: uniqueRecipients.size - receiptedRecipients.size,
+    byType: {
+      acknowledged: receipts.filter(r => r.receiptType === 'acknowledged').length,
+      processing: receipts.filter(r => r.receiptType === 'processing').length,
+      false_alarm: receipts.filter(r => r.receiptType === 'false_alarm').length
+    },
+    byTypeNames: {
+      acknowledged: '已知晓',
+      processing: '正在处理',
+      false_alarm: '误报待核'
+    }
+  };
+
+  const receiptDetailByRecipient = {};
+  receipts.forEach(r => {
+    if (!receiptDetailByRecipient[r.recipientId]) {
+      receiptDetailByRecipient[r.recipientId] = {
+        recipientId: r.recipientId,
+        recipientName: r.recipientName,
+        recipientRole: r.recipientRole,
+        latestReceipt: r,
+        receiptCount: 0,
+        receipts: []
+      };
+    }
+    receiptDetailByRecipient[r.recipientId].receiptCount++;
+    receiptDetailByRecipient[r.recipientId].receipts.push(r);
+  });
 
   return {
     alertId,
     alertCode: alert.alertCode,
+    alertLevel: alert.alertLevel,
+    alertLevelName: alert.alertLevelName,
     alertStatus: alert.status,
     receiptStatus,
+    notificationSummary,
+    receiptDetailByRecipient,
     receipts,
     notifications
   };
 }
 
 async function getReceiptStatistics(params = {}) {
-  const { projectId, startTime, endTime } = params;
+  const { projectId, startTime, endTime, groupBy } = params;
 
-  const where = {};
-  if (startTime) where.receiptTime = { ...where.receiptTime, $gte: new Date(startTime) };
-  if (endTime) where.receiptTime = { ...where.receiptTime, $lte: new Date(endTime) };
+  const receiptWhere = {};
+  if (startTime) receiptWhere.receiptTime = { ...receiptWhere.receiptTime, $gte: new Date(startTime) };
+  if (endTime) receiptWhere.receiptTime = { ...receiptWhere.receiptTime, $lte: new Date(endTime) };
 
-  const receiptsResult = await Receipt.findAll({ where });
-  let receipts = receiptsResult.rows;
+  const receiptsResult = await Receipt.findAll({ where: receiptWhere });
+  let allReceipts = receiptsResult.rows;
 
-  if (projectId) {
-    const alertResult = await Alert.findAll({ where: { projectId } });
-    const alertIds = alertResult.rows.map(a => a.id);
-    receipts = receipts.filter(r => alertIds.includes(r.alertId));
+  let alertsFilter = {};
+  if (projectId) alertsFilter.projectId = projectId;
+
+  const alertsResult = await Alert.findAll({ where: alertsFilter });
+  const alertMap = {};
+  alertsResult.rows.forEach(a => {
+    alertMap[a.id] = a;
+  });
+
+  const projectMap = {};
+  if (!projectId) {
+    const projectsResult = await Project.findAll({});
+    projectsResult.rows.forEach(p => {
+      projectMap[p.id] = p;
+    });
   }
 
-  const receiptsWithAlerts = await Promise.all(receipts.map(async receipt => {
-    return await loadAssociations(receipt, [
-      { model: 'Alert', as: 'alert' }
-    ]);
+  allReceipts = allReceipts.filter(r => alertMap[r.alertId]);
+
+  const receiptsWithAlerts = allReceipts.map(receipt => ({
+    ...receipt,
+    alert: alertMap[receipt.alertId]
   }));
 
-  const stats = {
-    total: receiptsWithAlerts.length,
-    byType: {
-      acknowledged: receiptsWithAlerts.filter(r => r.receiptType === 'acknowledged').length,
-      processing: receiptsWithAlerts.filter(r => r.receiptType === 'processing').length,
-      false_alarm: receiptsWithAlerts.filter(r => r.receiptType === 'false_alarm').length
-    },
-    byRole: {},
-    avgResponseTime: 0
+  const calculateStats = (receipts) => {
+    const uniqueRecipients = new Set();
+    const responseTimes = [];
+    const byType = {
+      acknowledged: 0,
+      processing: 0,
+      false_alarm: 0
+    };
+    const byRole = {};
+
+    receipts.forEach(r => {
+      uniqueRecipients.add(r.recipientId);
+      byType[r.receiptType] = (byType[r.receiptType] || 0) + 1;
+      
+      const role = r.recipientRole || 'unknown';
+      byRole[role] = (byRole[role] || 0) + 1;
+
+      if (r.alert && r.alert.occurTime) {
+        const occurTime = new Date(r.alert.occurTime);
+        const receiptTime = new Date(r.receiptTime);
+        const diff = (receiptTime - occurTime) / (1000 * 60);
+        if (diff > 0) {
+          responseTimes.push(diff);
+        }
+      }
+    });
+
+    return {
+      totalReceipts: receipts.length,
+      uniqueRecipients: uniqueRecipients.size,
+      byType,
+      byTypeNames: {
+        acknowledged: '已知晓',
+        processing: '正在处理',
+        false_alarm: '误报待核'
+      },
+      byRole,
+      avgResponseTimeMinutes: responseTimes.length > 0 
+        ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length 
+        : 0,
+      fastestResponseMinutes: responseTimes.length > 0 ? Math.min(...responseTimes) : 0,
+      slowestResponseMinutes: responseTimes.length > 0 ? Math.max(...responseTimes) : 0
+    };
   };
 
-  const roleCounts = {};
-  receiptsWithAlerts.forEach(r => {
-    const role = r.recipientRole || 'unknown';
-    roleCounts[role] = (roleCounts[role] || 0) + 1;
-  });
-  stats.byRole = roleCounts;
+  const overallStats = calculateStats(receiptsWithAlerts);
 
-  const responseTimes = [];
-  for (const receipt of receiptsWithAlerts) {
-    if (receipt.alert && receipt.alert.occurTime) {
-      const occurTime = new Date(receipt.alert.occurTime);
-      const receiptTime = new Date(receipt.receiptTime);
-      const diff = (receiptTime - occurTime) / (1000 * 60);
-      if (diff > 0) {
-        responseTimes.push(diff);
+  if (groupBy === 'project') {
+    const byProject = {};
+    
+    receiptsWithAlerts.forEach(r => {
+      const pid = r.alert.projectId;
+      if (!byProject[pid]) {
+        byProject[pid] = [];
       }
+      byProject[pid].push(r);
+    });
+
+    const projectStats = [];
+    for (const [pid, receipts] of Object.entries(byProject)) {
+      projectStats.push({
+        projectId: pid,
+        projectName: alertMap[receipts[0].alertId]?.projectName || (projectMap[pid]?.projectName || '未知项目'),
+        ...calculateStats(receipts)
+      });
     }
-  }
-  if (responseTimes.length > 0) {
-    stats.avgResponseTime = responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
+
+    return {
+      overall: overallStats,
+      byProject: projectStats
+    };
   }
 
-  return stats;
+  return {
+    overall: overallStats
+  };
 }
 
 module.exports = {

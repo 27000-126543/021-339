@@ -25,6 +25,50 @@ const defaultData = {
 const adapter = new JSONFile(dbPath);
 const db = new Low(adapter, defaultData);
 
+const operationQueue = [];
+let isOperationRunning = false;
+
+async function runLockedOperation(operation) {
+  if (isOperationRunning) {
+    return new Promise((resolve, reject) => {
+      operationQueue.push({ operation, resolve, reject });
+    });
+  }
+
+  isOperationRunning = true;
+
+  try {
+    let retries = 0;
+    const maxRetries = 5;
+    let result;
+    
+    while (retries < maxRetries) {
+      try {
+        await db.read();
+        result = await operation();
+        await db.write();
+        break;
+      } catch (error) {
+        retries++;
+        if (retries >= maxRetries) {
+          throw error;
+        }
+        await new Promise(r => setTimeout(r, 50 * retries));
+      }
+    }
+    
+    return result;
+  } finally {
+    isOperationRunning = false;
+    if (operationQueue.length > 0) {
+      const next = operationQueue.shift();
+      runLockedOperation(next.operation)
+        .then(next.resolve)
+        .catch(next.reject);
+    }
+  }
+}
+
 async function initDB() {
   await db.read();
   if (!db.data) {
@@ -123,41 +167,41 @@ class Model {
   }
 
   async create(data) {
-    await db.read();
-    const now = new Date();
-    const newItem = {
-      ...data,
-      id: data.id || require('uuid').v4(),
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null
-    };
-    db.data[this.collectionName].push(newItem);
-    await db.write();
-    return { ...newItem, get: (key) => newItem[key] };
+    return await runLockedOperation(() => {
+      const now = new Date();
+      const newItem = {
+        ...data,
+        id: data.id || require('uuid').v4(),
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null
+      };
+      db.data[this.collectionName].push(newItem);
+      return { ...newItem, get: (key) => newItem[key] };
+    });
   }
 
   async update(id, data) {
-    await db.read();
-    const index = db.data[this.collectionName].findIndex(item => item.id === id);
-    if (index === -1) return null;
-    db.data[this.collectionName][index] = {
-      ...db.data[this.collectionName][index],
-      ...data,
-      updatedAt: new Date()
-    };
-    await db.write();
-    const updated = db.data[this.collectionName][index];
-    return { ...updated, get: (key) => updated[key] };
+    return await runLockedOperation(() => {
+      const index = db.data[this.collectionName].findIndex(item => item.id === id);
+      if (index === -1) return null;
+      db.data[this.collectionName][index] = {
+        ...db.data[this.collectionName][index],
+        ...data,
+        updatedAt: new Date()
+      };
+      const updated = db.data[this.collectionName][index];
+      return { ...updated, get: (key) => updated[key] };
+    });
   }
 
   async destroy(id) {
-    await db.read();
-    const index = db.data[this.collectionName].findIndex(item => item.id === id);
-    if (index === -1) return null;
-    db.data[this.collectionName][index].deletedAt = new Date();
-    await db.write();
-    return true;
+    return await runLockedOperation(() => {
+      const index = db.data[this.collectionName].findIndex(item => item.id === id);
+      if (index === -1) return null;
+      db.data[this.collectionName][index].deletedAt = new Date();
+      return true;
+    });
   }
 
   async count(options = {}) {

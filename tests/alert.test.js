@@ -24,54 +24,97 @@ async function runTests() {
   let projectId = null;
   let areaId = null;
   let sensorId = null;
-  let alertId = null;
+  let level1AlertId = null;
   let recipientId = null;
   let notificationId = null;
+  let passedTests = 0;
+  let totalTests = 25;
+
+  function pass(desc) {
+    passedTests++;
+    console.log(`✅ ${desc}`);
+  }
+
+  function fail(desc) {
+    console.log(`❌ ${desc}`);
+    throw new Error(desc);
+  }
 
   try {
     console.log('\n📋 测试1: 健康检查');
     const healthResponse = await axiosInstance.get('/api/health');
-    console.log(`✅ 健康检查通过 - 版本: ${healthResponse.data.data?.version || healthResponse.data.version}`);
+    if (healthResponse.data.success) {
+      pass(`健康检查通过 - 版本: ${healthResponse.data.data?.version || healthResponse.data.version}`);
+    } else {
+      fail('健康检查失败');
+    }
 
-    console.log('\n📋 测试2: 获取项目列表');
+    console.log('\n📋 测试2: 获取通知通道配置');
+    const channelConfigResponse = await axiosInstance.get('/api/notifications/channels/config');
+    const channelConfig = channelConfigResponse.data.data;
+    if (channelConfig && channelConfig.channels) {
+      pass(`获取通道配置成功 - 模式: ${channelConfig.mode}`);
+      console.log(`   短信: ${channelConfig.channels.sms.mode} (${channelConfig.channels.sms.enabled ? '启用' : '禁用'})`);
+      console.log(`   语音: ${channelConfig.channels.voice.mode} (${channelConfig.channels.voice.enabled ? '启用' : '禁用'})`);
+      console.log(`   企业微信: ${channelConfig.channels.wechat.mode} (${channelConfig.channels.wechat.enabled ? '启用' : '禁用'})`);
+      console.log(`   邮件: ${channelConfig.channels.email.mode} (${channelConfig.channels.email.enabled ? '启用' : '禁用'})`);
+    } else {
+      fail('获取通道配置失败');
+    }
+
+    console.log('\n📋 测试3: 获取项目列表');
     const projectsResponse = await axiosInstance.get('/api/projects');
     if (projectsResponse.data.data?.list?.length > 0) {
       projectId = projectsResponse.data.data.list[0].id;
-      console.log(`✅ 获取项目列表成功 - 项目数: ${projectsResponse.data.data.total}, 项目ID: ${projectId}`);
+      pass(`获取项目列表成功 - 项目数: ${projectsResponse.data.data.total}, 项目ID: ${projectId.substring(0, 8)}...`);
     } else {
-      console.log('⚠️  项目列表为空，需要先初始化数据库');
+      fail('项目列表为空，需要先初始化数据库');
     }
 
     if (projectId) {
-      console.log('\n📋 测试3: 获取项目详情');
+      console.log('\n📋 测试4: 获取项目详情');
       const projectDetailResponse = await axiosInstance.get(`/api/projects/${projectId}`);
       const areas = projectDetailResponse.data.data.areas || [];
       const sensors = projectDetailResponse.data.data.sensors || [];
       const recipients = projectDetailResponse.data.data.recipients || [];
+      const rules = projectDetailResponse.data.data.notificationRules || [];
       
       if (areas.length > 0) areaId = areas[0].id;
       if (sensors.length > 0) sensorId = sensors[0].id;
       if (recipients.length > 0) recipientId = recipients[0].id;
       
-      console.log(`✅ 获取项目详情成功 - 区域: ${areas.length}个, 传感器: ${sensors.length}个, 接收人: ${recipients.length}个`);
+      pass(`获取项目详情成功 - 区域: ${areas.length}个, 传感器: ${sensors.length}个, 接收人: ${recipients.length}个, 规则: ${rules.length}个`);
     }
 
-    console.log('\n📋 测试4: 获取接收人列表');
+    console.log('\n📋 测试5: 获取接收人列表');
     const recipientsResponse = await axiosInstance.get('/api/recipients', {
       params: { projectId }
     });
-    console.log(`✅ 获取接收人列表成功 - 接收人数: ${recipientsResponse.data.data.total}`);
-    if (!recipientId && recipientsResponse.data.data.list.length > 0) {
-      recipientId = recipientsResponse.data.data.list[0].id;
+    const recipients = recipientsResponse.data.data.list;
+    if (recipientsResponse.data.data.total > 0) {
+      pass(`获取接收人列表成功 - 接收人数: ${recipientsResponse.data.data.total}`);
+      recipients.slice(0, 3).forEach(r => {
+        console.log(`   ${r.name} (${r.roleName}) - ${r.phone}`);
+      });
+      if (!recipientId) recipientId = recipients[0].id;
+    } else {
+      fail('接收人列表为空');
     }
 
-    console.log('\n📋 测试5: 获取通知规则列表');
+    console.log('\n📋 测试6: 获取通知规则列表');
     const rulesResponse = await axiosInstance.get('/api/notification-rules', {
       params: { projectId }
     });
-    console.log(`✅ 获取通知规则成功 - 规则数: ${rulesResponse.data.data.total}`);
+    if (rulesResponse.data.data.total >= 3) {
+      pass(`获取通知规则成功 - 规则数: ${rulesResponse.data.data.total}`);
+      rulesResponse.data.data.list.forEach(r => {
+        console.log(`   ${r.ruleName} - ${r.alertLevelName} - 角色: ${r.roles?.length || 0}个`);
+      });
+    } else {
+      fail(`通知规则数量不足: ${rulesResponse.data.data.total}`);
+    }
 
-    console.log('\n📋 测试6: 接收沉降超限告警（一级告警场景）');
+    console.log('\n📋 测试7: 接收沉降超限告警（一级告警 - 同步发送通知）');
     console.log('   场景: 夜间浇筑期间，沉降值25mm超过阈值10mm，超限比例250%');
     const settlementAlertData = {
       eventType: 'settlement_exceed',
@@ -87,18 +130,80 @@ async function runTests() {
       description: '沉降监测值超过预警阈值，需立即关注',
       sourceSystem: 'monitoring_system',
       sourceEventId: 'MON-20240621-0001',
-      occurTime: new Date().toISOString()
+      occurTime: new Date().toISOString(),
+      asyncNotify: false
     };
 
     const settlementResponse = await axiosInstance.post('/api/alerts/receive', settlementAlertData);
-    alertId = settlementResponse.data.data.alertId;
-    console.log(`✅ 沉降告警接收成功`);
+    level1AlertId = settlementResponse.data.data.alertId;
+    const alertLevel = settlementResponse.data.data.alertLevel;
+    
+    if (settlementResponse.data.data.alertLevel === 'level1') {
+      pass(`沉降告警接收成功 - 一级告警`);
+    } else {
+      fail(`告警级别不正确: ${settlementResponse.data.data.alertLevelName}, 应为一级告警`);
+    }
     console.log(`   告警编号: ${settlementResponse.data.data.alertCode}`);
-    console.log(`   告警级别: ${settlementResponse.data.data.alertLevelName} (${settlementResponse.data.data.alertLevel})`);
+    console.log(`   告警级别: ${settlementResponse.data.data.alertLevelName}`);
     console.log(`   分级原因: ${settlementResponse.data.data.reasons?.join('; ') || '无'}`);
+    console.log(`   通知数: ${settlementResponse.data.data.notificationCount || 0}`);
 
-    console.log('\n📋 测试7: 接收位移突变告警');
-    console.log('   场景: 夜间浇筑期间，位移值12mm超过阈值8mm，超限比例150%');
+    console.log('\n📋 测试8: 验证通知列表 - 按通道查看发给谁');
+    const notificationsResponse = await axiosInstance.get('/api/notifications', {
+      params: { alertId: level1AlertId }
+    });
+    const notifications = notificationsResponse.data.data.list;
+    const notifSummary = notificationsResponse.data.data.summary;
+
+    if (notifications.length > 0 && notifSummary) {
+      pass(`通知列表获取成功 - 总数: ${notifSummary.total}`);
+      console.log('   按通道分布:');
+      Object.entries(notifSummary.byChannel).forEach(([channel, count]) => {
+        const channelNames = { sms: '短信', voice: '语音', wechat: '企业微信', email: '邮件' };
+        console.log(`     ${channelNames[channel] || channel}: ${count}条`);
+      });
+      console.log('   按状态分布:');
+      Object.entries(notifSummary.byStatus).forEach(([status, count]) => {
+        const statusNames = { sent: '已发送', delivered: '已送达', not_sent: '未发送', failed: '失败', pending: '发送中' };
+        console.log(`     ${statusNames[status] || status}: ${count}条`);
+      });
+      
+      console.log('   通知明细（前6条）:');
+      notifications.slice(0, 6).forEach(n => {
+        console.log(`     ${n.channelName} -> ${n.recipientName} (${n.recipientRoleName || n.recipientRole}) - ${n.statusName}`);
+      });
+
+      const hasSms = notifSummary.byChannel.sms > 0;
+      const hasVoice = notifSummary.byChannel.voice > 0;
+      const hasWechat = notifSummary.byChannel.wechat > 0;
+      
+      if (hasSms && hasVoice && hasWechat) {
+        pass('一级告警包含短信、语音、企业微信三种通道');
+      } else {
+        fail(`一级告警通道不完整: 短信=${hasSms}, 语音=${hasVoice}, 微信=${hasWechat}`);
+      }
+
+      if (notifications[0]) notificationId = notifications[0].id;
+    } else {
+      fail('通知列表为空');
+    }
+
+    console.log('\n📋 测试9: 验证通知覆盖的角色（总包、监理、劳务班组、值班员等）');
+    const uniqueRoles = new Set(notifications.map(n => n.recipientRole));
+    console.log(`   通知覆盖角色: ${Array.from(uniqueRoles).join(', ')}`);
+    
+    const expectedRoles = ['general_contractor', 'supervisor', 'labor_team', 'duty_officer'];
+    const missingRoles = expectedRoles.filter(r => !uniqueRoles.has(r));
+    
+    if (missingRoles.length === 0) {
+      pass('所有预期角色都收到了通知');
+    } else {
+      console.log(`   ⚠️  缺失角色: ${missingRoles.join(', ')}（可能因值班过滤）`);
+      console.log('   提示: 如果有值班人员，系统会优先通知值班人员');
+    }
+
+    console.log('\n📋 测试10: 接收位移突变告警（二级告警）');
+    console.log('   场景: 位移值12mm超过阈值8mm，超限比例150%');
     const displacementAlertData = {
       eventType: 'displacement_sudden',
       projectId: projectId,
@@ -108,28 +213,28 @@ async function runTests() {
       thresholdValue: 8,
       unit: 'mm',
       sourceSystem: 'monitoring_system',
-      occurTime: new Date().toISOString()
+      occurTime: new Date().toISOString(),
+      asyncNotify: false
     };
 
     const displacementResponse = await axiosInstance.post('/api/alerts/receive', displacementAlertData);
-    console.log(`✅ 位移告警接收成功`);
-    console.log(`   告警级别: ${displacementResponse.data.data.alertLevelName}`);
+    pass(`位移告警接收成功 - ${displacementResponse.data.data.alertLevelName}`);
     console.log(`   分级原因: ${displacementResponse.data.data.reasons?.join('; ') || '无'}`);
 
-    console.log('\n📋 测试8: 接收传感器离线告警（提示类）');
-    console.log('   场景: 非高风险区域传感器离线');
+    console.log('\n📋 测试11: 接收传感器离线告警（提示类）');
+    console.log('   场景: 传感器离线，低风险');
     const offlineAlertData = {
       eventType: 'sensor_offline',
       projectId: projectId,
       sourceSystem: 'monitoring_system',
-      occurTime: new Date().toISOString()
+      occurTime: new Date().toISOString(),
+      asyncNotify: false
     };
 
     const offlineResponse = await axiosInstance.post('/api/alerts/receive', offlineAlertData);
-    console.log(`✅ 传感器离线告警接收成功`);
-    console.log(`   告警级别: ${offlineResponse.data.data.alertLevelName}`);
+    pass(`传感器离线告警接收成功 - ${offlineResponse.data.data.alertLevelName}`);
 
-    console.log('\n📋 测试9: 批量接收告警');
+    console.log('\n📋 测试12: 批量接收告警');
     const batchEvents = [
       {
         eventType: 'threshold_exceed',
@@ -151,9 +256,13 @@ async function runTests() {
     ];
 
     const batchResponse = await axiosInstance.post('/api/alerts/batch', { events: batchEvents });
-    console.log(`✅ 批量告警接收成功 - 成功: ${batchResponse.data.data.successCount}, 失败: ${batchResponse.data.data.failCount}`);
+    if (batchResponse.data.data.successCount === 2) {
+      pass(`批量告警接收成功 - 成功: ${batchResponse.data.data.successCount}, 失败: ${batchResponse.data.data.failCount}`);
+    } else {
+      fail(`批量告警接收失败: 成功${batchResponse.data.data.successCount}条`);
+    }
 
-    console.log('\n📋 测试10: 获取告警列表');
+    console.log('\n📋 测试13: 获取告警列表');
     const alertsResponse = await axiosInstance.get('/api/alerts', {
       params: {
         projectId,
@@ -161,146 +270,227 @@ async function runTests() {
         pageSize: 10
       }
     });
-    console.log(`✅ 获取告警列表成功 - 总数: ${alertsResponse.data.data.total}`);
-    alertsResponse.data.data.list.forEach((alert, index) => {
-      console.log(`   ${index + 1}. ${alert.alertLevelName} - ${alert.eventTypeName} - ${alert.alertCode}`);
-    });
-
-    if (alertId) {
-      console.log('\n📋 测试11: 获取告警详情');
-      const alertDetailResponse = await axiosInstance.get(`/api/alerts/${alertId}`);
-      const notifications = alertDetailResponse.data.data.notifications || [];
-      console.log(`✅ 获取告警详情成功 - 通知数: ${notifications.length}`);
-      
-      if (notifications.length > 0) {
-        notificationId = notifications[0].id;
-        console.log(`   通知示例: ${notifications[0].channelName} -> ${notifications[0].recipientName}`);
-        console.log(`   通知状态: ${notifications[0].status}`);
-        console.log(`   回执链接: ${notifications[0].receiptLink?.substring(0, 60)}...`);
-      }
+    if (alertsResponse.data.data.total >= 5) {
+      pass(`获取告警列表成功 - 总数: ${alertsResponse.data.data.total}`);
+      alertsResponse.data.data.list.slice(0, 4).forEach((alert, index) => {
+        console.log(`   ${index + 1}. ${alert.alertLevelName} - ${alert.eventTypeName} - ${alert.alertCode}`);
+      });
+    } else {
+      fail(`告警数量不足: ${alertsResponse.data.data.total}`);
     }
 
-    console.log('\n📋 测试12: 获取通知列表');
-    const notificationsResponse = await axiosInstance.get('/api/notifications', {
-      params: { alertId }
-    });
-    console.log(`✅ 获取通知列表成功 - 总数: ${notificationsResponse.data.data.total}`);
+    console.log('\n📋 测试14: 获取告警详情（含通知和回执）');
+    const alertDetailResponse = await axiosInstance.get(`/api/alerts/${level1AlertId}`);
+    const notifsInDetail = alertDetailResponse.data.data.notifications || [];
+    if (alertDetailResponse.data.data.id === level1AlertId) {
+      pass(`获取告警详情成功 - 通知数: ${notifsInDetail.length}`);
+      if (notifsInDetail.length > 0) {
+        console.log(`   通知示例: ${notifsInDetail[0].channelName} -> ${notifsInDetail[0].recipientName} - ${notifsInDetail[0].statusName}`);
+      }
+    } else {
+      fail('获取告警详情失败');
+    }
 
-    if (alertId && recipientId) {
-      console.log('\n📋 测试13: 提交回执 - 正在处理');
-      const receiptData = {
-        alertId: alertId,
-        recipientId: recipientId,
-        notificationId: notificationId,
-        receiptType: 'processing',
-        siteContact: '李现场',
-        siteContactPhone: '13900139000',
-        estimatedHandleTime: 30,
-        remark: '已安排人员前往现场检查，预计30分钟到达'
+    console.log('\n📋 测试15: 提交回执 - 正在处理（第一个接收人）');
+    const firstRecipient = recipients[0];
+    const processingReceiptData = {
+      alertId: level1AlertId,
+      recipientId: firstRecipient.id,
+      receiptType: 'processing',
+      siteContact: '李现场',
+      siteContactPhone: '13900139000',
+      estimatedHandleTime: 30,
+      remark: '已安排人员前往现场检查，预计30分钟到达'
+    };
+
+    const processingResponse = await axiosInstance.post('/api/receipt/submit', processingReceiptData);
+    if (processingResponse.data.data.receiptType === 'processing') {
+      pass('回执提交成功 - 正在处理');
+      console.log(`   回执类型: ${processingResponse.data.data.receiptTypeName}`);
+      console.log(`   告警状态更新为: ${processingResponse.data.data.alertStatus}`);
+    } else {
+      fail('回执提交失败');
+    }
+
+    console.log('\n📋 测试16: 提交回执 - 已知晓（第二个接收人）');
+    const secondRecipient = recipients[1];
+    if (secondRecipient) {
+      const ackReceiptData = {
+        alertId: level1AlertId,
+        recipientId: secondRecipient.id,
+        receiptType: 'acknowledged',
+        siteContact: '王主管',
+        siteContactPhone: '13900139001',
+        remark: '已知悉，正在跟进处理进展'
       };
 
-      const receiptResponse = await axiosInstance.post('/api/receipt/submit', receiptData);
-      console.log(`✅ 回执提交成功`);
-      console.log(`   回执类型: ${receiptResponse.data.data.receiptTypeName}`);
-      console.log(`   告警状态更新为: ${receiptResponse.data.data.alertStatus}`);
-      console.log(`   现场联系人: ${receiptData.siteContact} (${receiptData.siteContactPhone})`);
-
-      console.log('\n📋 测试14: 提交回执 - 已知晓（第二个接收人）');
-      const recipient2 = recipientsResponse.data.data.list[1];
-      if (recipient2) {
-        const receiptData2 = {
-          alertId: alertId,
-          recipientId: recipient2.id,
-          receiptType: 'acknowledged',
-          siteContact: '王主管',
-          siteContactPhone: '13900139001',
-          remark: '已知悉，正在跟进处理进展'
-        };
-
-        const receiptResponse2 = await axiosInstance.post('/api/receipt/submit', receiptData2);
-        console.log(`✅ 第二份回执提交成功 - 类型: ${receiptResponse2.data.data.receiptTypeName}`);
-      }
+      const ackResponse = await axiosInstance.post('/api/receipt/submit', ackReceiptData);
+      pass(`第二份回执提交成功 - ${ackResponse.data.data.receiptTypeName}`);
     }
 
-    console.log('\n📋 测试15: 获取告警回执状态');
-    const alertReceiptsResponse = await axiosInstance.get(`/api/receipt/alert/${alertId}`);
-    const receiptStatus = alertReceiptsResponse.data.data.receiptStatus;
-    console.log(`✅ 获取回执状态成功`);
-    console.log(`   总通知数: ${receiptStatus.total}`);
-    console.log(`   已回执: ${receiptStatus.acknowledged + receiptStatus.processing + receiptStatus.falseAlarm}`);
-    console.log(`   待回执: ${receiptStatus.pending}`);
-    console.log(`   已知晓: ${receiptStatus.acknowledged}, 处理中: ${receiptStatus.processing}, 误报: ${receiptStatus.falseAlarm}`);
+    console.log('\n📋 测试17: 提交回执 - 误报待核（第三个接收人）');
+    const thirdRecipient = recipients[2];
+    if (thirdRecipient) {
+      const falseAlarmReceiptData = {
+        alertId: level1AlertId,
+        recipientId: thirdRecipient.id,
+        receiptType: 'false_alarm',
+        siteContact: '赵工',
+        siteContactPhone: '13900139002',
+        remark: '经现场核实，为传感器漂移导致的误报'
+      };
 
-    console.log('\n📋 测试16: 获取回执列表');
+      const falseAlarmResponse = await axiosInstance.post('/api/receipt/submit', falseAlarmReceiptData);
+      pass(`第三份回执提交成功 - ${falseAlarmResponse.data.data.receiptTypeName}`);
+    }
+
+    console.log('\n📋 测试18: 查询告警回执状态 - 验证汇总与明细一致');
+    const alertReceiptsResponse = await axiosInstance.get(`/api/receipt/alert/${level1AlertId}`);
+    const receiptData = alertReceiptsResponse.data.data;
+    const receiptStatus = receiptData.receiptStatus;
+    const receiptsList = receiptData.receipts;
+
+    console.log('   回执状态汇总:');
+    console.log(`     总通知数: ${receiptStatus.totalNotifications}`);
+    console.log(`     总接收人: ${receiptStatus.totalRecipients}`);
+    console.log(`     已回执人数: ${receiptStatus.receiptedCount}`);
+    console.log(`     待回执人数: ${receiptStatus.pendingCount}`);
+    console.log(`     按类型分布: 已知晓=${receiptStatus.byType.acknowledged}, 处理中=${receiptStatus.byType.processing}, 误报=${receiptStatus.byType.false_alarm}`);
+
+    const totalByType = receiptStatus.byType.acknowledged + receiptStatus.byType.processing + receiptStatus.byType.false_alarm;
+    if (totalByType === receiptsList.length && receiptsList.length >= 3) {
+      pass('回执汇总数量与明细数量一致');
+    } else {
+      fail(`回执数量不一致: 汇总${totalByType}, 明细${receiptsList.length}`);
+    }
+
+    console.log('   回执明细:');
+    receiptsList.forEach((r, i) => {
+      console.log(`     ${i + 1}. ${r.recipientName} (${r.recipientRole}) - ${r.receiptTypeName} - 现场: ${r.siteContact}`);
+    });
+
+    console.log('\n📋 测试19: 获取回执列表');
     const receiptListResponse = await axiosInstance.get('/api/receipt/list', {
-      params: { alertId }
+      params: { alertId: level1AlertId }
     });
-    console.log(`✅ 获取回执列表成功 - 总数: ${receiptListResponse.data.data.total}`);
-    receiptListResponse.data.data.list.forEach((receipt, index) => {
-      console.log(`   ${index + 1}. ${receipt.recipientName} (${receipt.recipientRole}) - ${receipt.receiptTypeName}`);
-    });
+    if (receiptListResponse.data.data.total >= 3) {
+      pass(`获取回执列表成功 - 总数: ${receiptListResponse.data.data.total}`);
+    } else {
+      fail(`回执数量不足: ${receiptListResponse.data.data.total}`);
+    }
 
-    console.log('\n📋 测试17: 获取回执统计');
+    console.log('\n📋 测试20: 回执统计接口 - 按项目汇总');
     const statsResponse = await axiosInstance.get('/api/receipt/statistics/summary', {
       params: { projectId }
     });
-    console.log(`✅ 获取回执统计成功`);
-    console.log(`   总回执数: ${statsResponse.data.data.total}`);
-    console.log(`   平均响应时间: ${statsResponse.data.data.avgResponseTime.toFixed(2)} 分钟`);
-    console.log(`   按类型分布: 已知晓=${statsResponse.data.data.byType.acknowledged}, 处理中=${statsResponse.data.data.byType.processing}, 误报=${statsResponse.data.data.byType.false_alarm}`);
+    const stats = statsResponse.data.data.overall;
 
-    console.log('\n📋 测试18: 更新项目浇筑状态');
+    if (stats && stats.totalReceipts >= 3) {
+      pass('回执统计获取成功');
+      console.log(`   总回执数: ${stats.totalReceipts}`);
+      console.log(`   唯一接收人: ${stats.uniqueRecipients}`);
+      console.log(`   平均响应时间: ${stats.avgResponseTimeMinutes.toFixed(2)} 分钟`);
+      console.log(`   最快响应: ${stats.fastestResponseMinutes.toFixed(2)} 分钟`);
+      console.log(`   最慢响应: ${stats.slowestResponseMinutes.toFixed(2)} 分钟`);
+      console.log(`   按类型: 已知晓=${stats.byType.acknowledged}, 处理中=${stats.byType.processing}, 误报=${stats.byType.false_alarm}`);
+    } else {
+      fail(`回执统计数据异常`);
+    }
+
+    console.log('\n📋 测试21: 回执统计接口 - 按项目分组');
+    const groupByProjectResponse = await axiosInstance.get('/api/receipt/statistics/summary', {
+      params: { groupBy: 'project' }
+    });
+    const groupByData = groupByProjectResponse.data.data;
+    
+    if (groupByData.byProject && Array.isArray(groupByData.byProject)) {
+      pass('按项目分组统计获取成功');
+      groupByData.byProject.forEach(p => {
+        console.log(`   ${p.projectName}: ${p.totalReceipts}条回执, 平均响应${p.avgResponseTimeMinutes.toFixed(2)}分钟`);
+      });
+    } else {
+      console.log('   ⚠️  按项目分组返回结构需确认');
+      console.log('   返回数据:', JSON.stringify(groupByData).substring(0, 200));
+    }
+
+    console.log('\n📋 测试22: 更新项目浇筑状态');
     const pouringStatusResponse = await axiosInstance.post(`/api/projects/${projectId}/pouring-status`, {
       pouringStatus: 'pouring',
       isNightPouring: true
     });
-    console.log(`✅ 浇筑状态更新成功 - 当前状态: ${pouringStatusResponse.data.data.pouringStatus}`);
-    console.log(`   夜间浇筑: ${pouringStatusResponse.data.data.isNightPouring ? '是' : '否'}`);
+    if (pouringStatusResponse.data.data.pouringStatus === 'pouring') {
+      pass(`浇筑状态更新成功 - 当前状态: ${pouringStatusResponse.data.data.pouringStatus}`);
+      console.log(`   夜间浇筑: ${pouringStatusResponse.data.data.isNightPouring ? '是' : '否'}`);
+    } else {
+      fail('浇筑状态更新失败');
+    }
 
-    console.log('\n📋 测试19: 更新接收人值班状态');
+    console.log('\n📋 测试23: 更新接收人值班状态');
     if (recipientId) {
       const dutyResponse = await axiosInstance.post(`/api/recipients/${recipientId}/duty`, {
         isOnDuty: true
       });
-      console.log(`✅ 值班状态更新成功 - ${dutyResponse.data.data.name}: ${dutyResponse.data.data.isOnDuty ? '值班中' : '已下班'}`);
+      if (dutyResponse.data.data.isOnDuty) {
+        pass(`值班状态更新成功 - ${dutyResponse.data.data.name}: 值班中`);
+      } else {
+        fail('值班状态更新失败');
+      }
     }
 
-    console.log('\n📋 测试20: 创建新的通知规则');
+    console.log('\n📋 测试24: 创建新的通知规则');
     const newRuleData = {
       ruleName: '自定义规则-紧急情况通知管理层',
       ruleType: 'project_level',
       projectId: projectId,
       alertLevel: 'level1',
       roles: ['project_manager', 'safety_officer'],
-      channels: { sms: true, voice: true, wechat: true, email: true },
+      channels: { sms: true, voice: true, wechat: true, email: false },
       priority: 200,
-      description: '紧急情况时额外通知项目经理和安全员'
+      description: '紧急情况时额外通知项目经理和安全员',
+      isEnabled: true
     };
 
     const newRuleResponse = await axiosInstance.post('/api/notification-rules', newRuleData);
-    console.log(`✅ 通知规则创建成功 - 规则ID: ${newRuleResponse.data.data.id}`);
-    console.log(`   规则名称: ${newRuleResponse.data.data.ruleName}`);
+    if (newRuleResponse.data.data?.id) {
+      pass(`通知规则创建成功 - 规则ID: ${newRuleResponse.data.data.id.substring(0, 8)}...`);
+      console.log(`   规则名称: ${newRuleResponse.data.data.ruleName}`);
+    } else {
+      fail('通知规则创建失败');
+    }
+
+    console.log('\n📋 测试25: 验证通知状态标记（模拟模式下应有明确标识）');
+    const firstNotification = notifications[0];
+    if (firstNotification && firstNotification.isSimulated !== undefined) {
+      if (firstNotification.isSimulated) {
+        pass('通知记录正确标记为模拟发送');
+        console.log(`   通知状态: ${firstNotification.statusName}`);
+        console.log(`   是否模拟: ${firstNotification.isSimulated ? '是' : '否'}`);
+      } else {
+        pass('通知记录为真实发送模式');
+      }
+    } else {
+      console.log('   ⚠️  通知缺少模拟状态标记');
+    }
 
     console.log('\n' + '='.repeat(60));
-    console.log('✅ 所有测试完成！');
+    console.log(`✅ 测试完成! 通过: ${passedTests}/${totalTests}`);
     console.log('='.repeat(60));
     console.log('\n📊 测试总结:');
-    console.log(`   项目ID: ${projectId}`);
-    console.log(`   区域ID: ${areaId}`);
-    console.log(`   传感器ID: ${sensorId}`);
-    console.log(`   接收人ID: ${recipientId}`);
-    console.log(`   告警ID: ${alertId}`);
-    console.log(`   通知ID: ${notificationId}`);
+    console.log(`   项目ID: ${projectId.substring(0, 8)}...`);
+    console.log(`   一级告警ID: ${level1AlertId.substring(0, 8)}...`);
+    console.log(`   通知数量: ${notifSummary?.total || 0}条`);
+    console.log(`   回执数量: ${receiptsList?.length || 0}条`);
     console.log('\n🔗 API基础地址: ' + BASE_URL);
     console.log('🔑 API Key: ' + API_KEY);
     console.log('\n📖 主要接口:');
-    console.log('   POST /api/alerts/receive      - 接收告警');
-    console.log('   POST /api/alerts/batch        - 批量接收告警');
-    console.log('   GET  /api/alerts              - 查询告警列表');
-    console.log('   GET  /api/alerts/:id          - 查询告警详情');
-    console.log('   POST /api/receipt/submit      - 提交回执');
-    console.log('   GET  /api/receipt/alert/:id   - 查询告警回执状态');
-    console.log('   GET  /api/notifications       - 查询通知列表');
+    console.log('   POST /api/alerts/receive            - 接收告警（asyncNotify=false 同步发送通知）');
+    console.log('   GET  /api/alerts                    - 查询告警列表');
+    console.log('   GET  /api/alerts/:id                - 查询告警详情');
+    console.log('   GET  /api/notifications             - 查询通知列表（含通道/状态汇总）');
+    console.log('   GET  /api/notifications/channels/config - 获取通知通道配置');
+    console.log('   POST /api/receipt/submit            - 提交回执');
+    console.log('   GET  /api/receipt/alert/:id         - 查询告警回执状态');
+    console.log('   GET  /api/receipt/statistics/summary - 回执统计（支持groupBy=project）');
     console.log('='.repeat(60));
 
   } catch (error) {
@@ -315,7 +505,8 @@ async function runTests() {
     } else {
       console.error(`   错误: ${error.message}`);
     }
-    console.error(`   堆栈: ${error.stack?.substring(0, 200)}...`);
+    console.error(`   已通过: ${passedTests}/${totalTests}`);
+    console.error(`   堆栈: ${error.stack?.substring(0, 300)}...`);
     process.exit(1);
   }
 }

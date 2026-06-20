@@ -175,7 +175,7 @@ async function createDefaultRules(projectId, createdBy = 'system') {
     {
       ruleName: '一级告警-总包监理班组全员通知',
       alertLevel: 'level1',
-      roles: ['general_contractor', 'supervisor', 'labor_team', 'project_manager', 'safety_officer'],
+      roles: ['general_contractor', 'supervisor', 'labor_team', 'project_manager', 'safety_officer', 'duty_officer'],
       channels: { sms: true, voice: true, wechat: true, email: false },
       priority: 100,
       description: '一级告警：电话语音+短信+企业群，通知总包、监理、劳务班组、项目经理、安全员'

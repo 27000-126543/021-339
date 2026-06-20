@@ -200,6 +200,7 @@ async function initDatabase() {
       await Recipient.create({
         ...r,
         projectId: project.id,
+        isEnabled: true,
         roleName: {
           'general_contractor': '总包',
           'supervisor': '监理',

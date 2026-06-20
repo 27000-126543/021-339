@@ -73,12 +73,19 @@ router.get('/list', apiKeyAuth, asyncHandler(async (req, res) => {
   });
 }));
 
-router.get('/:id', apiKeyAuth, asyncHandler(async (req, res) => {
-  const receipt = await getReceiptDetail(req.params.id);
+router.get('/statistics/summary', apiKeyAuth, asyncHandler(async (req, res) => {
+  const params = {
+    projectId: req.query.projectId,
+    startTime: req.query.startTime,
+    endTime: req.query.endTime,
+    groupBy: req.query.groupBy
+  };
+
+  const stats = await getReceiptStatistics(params);
 
   res.json({
     success: true,
-    data: receipt
+    data: stats
   });
 }));
 
@@ -91,18 +98,12 @@ router.get('/alert/:alertId', apiKeyAuth, asyncHandler(async (req, res) => {
   });
 }));
 
-router.get('/statistics/summary', apiKeyAuth, asyncHandler(async (req, res) => {
-  const params = {
-    projectId: req.query.projectId,
-    startTime: req.query.startTime,
-    endTime: req.query.endTime
-  };
-
-  const stats = await getReceiptStatistics(params);
+router.get('/:id', apiKeyAuth, asyncHandler(async (req, res) => {
+  const receipt = await getReceiptDetail(req.params.id);
 
   res.json({
     success: true,
-    data: stats
+    data: receipt
   });
 }));
 

@@ -4,8 +4,18 @@ const { apiKeyAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const {
   triggerNotifications,
-  getNotificationList
+  getNotificationList,
+  getChannelConfig
 } = require('../services/notificationService');
+
+router.get('/channels/config', apiKeyAuth, asyncHandler(async (req, res) => {
+  const config = getChannelConfig();
+  
+  res.json({
+    success: true,
+    data: config
+  });
+}));
 
 router.post('/trigger/:alertId', apiKeyAuth, asyncHandler(async (req, res) => {
   const result = await triggerNotifications(req.params.alertId);

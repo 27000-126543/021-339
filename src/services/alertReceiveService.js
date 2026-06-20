@@ -1,4 +1,4 @@
-const { Alert, Project, Area, Sensor, loadAssociations } = require('../models');
+const { Alert, Project, Area, Sensor, Notification, loadAssociations } = require('../models');
 const { generateAlertCode } = require('../utils/alertCodeGenerator');
 const { determineAlertLevel, isNightPouring, isPouringActive } = require('./alertLevelService');
 const { triggerNotifications } = require('./notificationService');
@@ -83,15 +83,27 @@ async function receiveAlert(eventData) {
     alertLevel: alert.alertLevel 
   });
 
-  setImmediate(async () => {
+  const asyncNotify = eventData.asyncNotify !== false;
+  
+  if (asyncNotify) {
+    (async () => {
+      try {
+        const notifyResult = await triggerNotifications(alert.id);
+        logger.info('告警通知触发完成', { alertId: alert.id, ...notifyResult });
+      } catch (error) {
+        logger.error('触发通知失败', { alertId: alert.id, error: error.message });
+      }
+    })();
+  } else {
     try {
-      await triggerNotifications(alert.id);
+      const notifyResult = await triggerNotifications(alert.id);
+      logger.info('告警通知同步发送完成', { alertId: alert.id, ...notifyResult });
     } catch (error) {
-      logger.error('触发通知失败', { alertId: alert.id, error: error.message });
+      logger.error('同步发送通知失败', { alertId: alert.id, error: error.message });
     }
-  });
+  }
 
-  return {
+  const result = {
     success: true,
     alertId: alert.id,
     alertCode: alert.alertCode,
@@ -100,6 +112,14 @@ async function receiveAlert(eventData) {
     reasons: levelResult.reasons,
     context: levelResult.context
   };
+
+  if (!asyncNotify) {
+    const notificationsResult = await Notification.findAll({ where: { alertId: alert.id } });
+    result.notificationCount = notificationsResult.count;
+    result.notifications = notificationsResult.rows;
+  }
+
+  return result;
 }
 
 function validateEventData(eventData) {

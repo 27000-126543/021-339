@@ -105,16 +105,11 @@ async function determineAlertLevel(eventData) {
 
   switch (eventType) {
     case 'sensor_offline':
-      if (isNightPouringFlag) {
-        alertLevel = ALERT_LEVELS.LEVEL1;
-        reasons.push('夜间浇筑期间传感器离线');
-      } else if (isPouring) {
-        alertLevel = ALERT_LEVELS.LEVEL2;
-        reasons.push('浇筑期间传感器离线');
-      } else if (areaRiskLevel === 'critical' || areaRiskLevel === 'high') {
+      if (areaRiskLevel === 'critical' || areaRiskLevel === 'high') {
         alertLevel = ALERT_LEVELS.LEVEL2;
         reasons.push('高风险区域传感器离线');
       } else {
+        alertLevel = ALERT_LEVELS.NOTICE;
         reasons.push('传感器离线');
       }
       break;
@@ -122,58 +117,72 @@ async function determineAlertLevel(eventData) {
     case 'settlement_exceed':
     case 'displacement_sudden':
       const exceedRatio = getExceedRatio(currentValue, thresholdValue);
+      const eventTypeLabel = eventType === 'settlement_exceed' ? '沉降' : '位移';
       
-      if (exceedRatio >= 2.0 || (isNightPouringFlag && exceedRatio >= 1.2)) {
+      if (exceedRatio >= 2.0) {
         alertLevel = ALERT_LEVELS.LEVEL1;
-        reasons.push(`${isNightPouringFlag ? '夜间浇筑期间' : ''}${eventType === 'settlement_exceed' ? '沉降' : '位移'}严重超限，超限比例${(exceedRatio * 100).toFixed(0)}%`);
-      } else if (exceedRatio >= 1.5 || isNightPouringFlag || areaRiskLevel === 'critical') {
+        reasons.push(`${eventTypeLabel}严重超限，超限比例${(exceedRatio * 100).toFixed(0)}%`);
+      } else if (exceedRatio >= 1.5) {
         alertLevel = ALERT_LEVELS.LEVEL2;
-        reasons.push(`${isNightPouringFlag ? '夜间浇筑期间' : ''}${eventType === 'settlement_exceed' ? '沉降' : '位移'}超限，超限比例${(exceedRatio * 100).toFixed(0)}%`);
-      } else if (exceedRatio >= 1.2 || isPouring) {
+        reasons.push(`${eventTypeLabel}超限，超限比例${(exceedRatio * 100).toFixed(0)}%`);
+      } else if (exceedRatio >= 1.2) {
         alertLevel = ALERT_LEVELS.LEVEL2;
-        reasons.push(`${isPouring ? '浇筑期间' : ''}${eventType === 'settlement_exceed' ? '沉降' : '位移'}轻微超限，超限比例${(exceedRatio * 100).toFixed(0)}%`);
+        reasons.push(`${eventTypeLabel}轻微超限，超限比例${(exceedRatio * 100).toFixed(0)}%`);
       } else {
-        reasons.push(`${eventType === 'settlement_exceed' ? '沉降' : '位移'}数据异常`);
+        alertLevel = ALERT_LEVELS.NOTICE;
+        reasons.push(`${eventTypeLabel}数据异常`);
       }
       break;
 
     case 'threshold_exceed':
       const ratio = getExceedRatio(currentValue, thresholdValue);
-      if (ratio >= 2.0 || (isNightPouringFlag && ratio >= 1.3)) {
+      if (ratio >= 2.0) {
         alertLevel = ALERT_LEVELS.LEVEL1;
         reasons.push('严重超限');
-      } else if (ratio >= 1.5 || isNightPouringFlag) {
+      } else if (ratio >= 1.5) {
         alertLevel = ALERT_LEVELS.LEVEL2;
         reasons.push('超限');
       } else {
+        alertLevel = ALERT_LEVELS.NOTICE;
         reasons.push('数据接近阈值');
       }
       break;
 
     case 'sensor_fault':
-      if (isNightPouringFlag || areaRiskLevel === 'critical') {
+      if (areaRiskLevel === 'critical') {
         alertLevel = ALERT_LEVELS.LEVEL2;
-        reasons.push('高风险场景传感器故障');
+        reasons.push('关键区域传感器故障');
       } else {
+        alertLevel = ALERT_LEVELS.NOTICE;
         reasons.push('传感器故障');
       }
       break;
 
     default:
-      if (isNightPouringFlag) {
-        alertLevel = ALERT_LEVELS.LEVEL2;
-      }
+      alertLevel = ALERT_LEVELS.NOTICE;
       reasons.push('未知事件');
   }
 
-  if (areaRiskLevel === 'critical' && alertLevel === ALERT_LEVELS.NOTICE) {
-    alertLevel = ALERT_LEVELS.LEVEL2;
-    reasons.push('关键区域事件升级');
+  const levelOrder = [ALERT_LEVELS.NOTICE, ALERT_LEVELS.LEVEL2, ALERT_LEVELS.LEVEL1];
+  
+  function upgradeLevel(reason) {
+    const currentIndex = levelOrder.indexOf(alertLevel);
+    if (currentIndex < levelOrder.length - 1) {
+      alertLevel = levelOrder[currentIndex + 1];
+      reasons.push(reason);
+    }
   }
 
-  if (isNight && isPouring && alertLevel === ALERT_LEVELS.LEVEL2) {
-    alertLevel = ALERT_LEVELS.LEVEL1;
-    reasons.push('夜间浇筑事件升级为一级');
+  if (areaRiskLevel === 'critical' && alertLevel === ALERT_LEVELS.NOTICE) {
+    upgradeLevel('关键区域事件升级');
+  }
+
+  if (isPouring && alertLevel === ALERT_LEVELS.NOTICE) {
+    upgradeLevel('浇筑期间事件升级');
+  }
+
+  if (isNightPouringFlag && alertLevel !== ALERT_LEVELS.LEVEL1) {
+    upgradeLevel('夜间浇筑期间事件升级');
   }
 
   logger.info('告警分级完成', {
