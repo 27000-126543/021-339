@@ -6,7 +6,8 @@ const {
   triggerNotifications,
   getNotificationList,
   getChannelConfig,
-  getNotificationBatchOverview
+  getNotificationBatchOverview,
+  getNotificationBatchLedger
 } = require('../services/notificationService');
 
 router.get('/channels/config', apiKeyAuth, asyncHandler(async (req, res) => {
@@ -24,6 +25,24 @@ router.get('/batch/overview/:alertId', apiKeyAuth, asyncHandler(async (req, res)
   res.json({
     success: true,
     data: overview
+  });
+}));
+
+router.get('/batch/ledger', apiKeyAuth, asyncHandler(async (req, res) => {
+  const params = {
+    page: parseInt(req.query.page) || 1,
+    pageSize: parseInt(req.query.pageSize) || 20,
+    projectId: req.query.projectId,
+    alertLevel: req.query.alertLevel,
+    startTime: req.query.startTime,
+    endTime: req.query.endTime
+  };
+
+  const result = await getNotificationBatchLedger(params);
+
+  res.json({
+    success: true,
+    data: result
   });
 }));
 

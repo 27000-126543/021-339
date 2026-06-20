@@ -8,6 +8,7 @@ const Recipient = require('./Recipient');
 const NotificationRule = require('./NotificationRule');
 const Notification = require('./Notification');
 const Receipt = require('./Receipt');
+const Reminder = require('./Reminder');
 
 async function loadAssociations(item, includes) {
   if (!item || !includes) return item;
@@ -91,6 +92,15 @@ async function loadAssociations(item, includes) {
           relatedData = await Receipt.findAll({ where: { id: item[foreignKey], ...where } });
         }
         break;
+      case 'Reminder':
+        if (foreignKey === 'alertId') {
+          relatedData = await Reminder.findAll({ where: { alertId: item.id, ...where } });
+        } else if (foreignKey === 'recipientId') {
+          relatedData = await Reminder.findAll({ where: { recipientId: item.id, ...where } });
+        } else {
+          relatedData = await Reminder.findAll({ where: { id: item[foreignKey], ...where } });
+        }
+        break;
     }
     
     if (include.include) {
@@ -122,5 +132,6 @@ module.exports = {
   Recipient,
   NotificationRule,
   Notification,
-  Receipt
+  Receipt,
+  Reminder
 };

@@ -636,19 +636,40 @@ async function triggerNotifications(alertId) {
       
       for (const channel of Object.keys(defaultChannels)) {
         if (defaultChannels[channel] && recipientChannels[channel] !== false) {
-          const result = await sendNotification(alertWithAssociations, recipient, channel);
-          notifications.push(result);
+          try {
+            const result = await sendNotification(alertWithAssociations, recipient, channel);
+            notifications.push(result);
+          } catch (error) {
+            logger.error('默认规则下发送单条通知失败', { 
+              alertId, 
+              recipientId: recipient.id, 
+              channel, 
+              error: error.message 
+            });
+          }
         }
       }
     }
 
     await updateAlertReceiptStatus(alertId);
     
+    const batchOverview = buildNotificationBatchOverview(alertWithAssociations, recipients, notifications);
+
+    logger.info('默认规则通知发送完成', { 
+      alertId, 
+      recipientCount: batchOverview.expectedRecipientCount, 
+      notificationCount: batchOverview.totalNotifications,
+      successCount: batchOverview.successCount,
+      notSentCount: batchOverview.notSentCount
+    });
+
     return {
       sent: true,
+      recipientCount: recipients.length,
       notificationCount: notifications.length,
       usingDefault: true,
-      notifications
+      notifications,
+      batchOverview
     };
   }
 
@@ -784,6 +805,23 @@ function buildNotificationBatchOverview(alert, expectedRecipients, sentResults) 
     failedCount += ch.failed;
   });
 
+  const channelConfigSummary = {};
+  ['sms', 'voice', 'wechat', 'email'].forEach(ch => {
+    const configStatus = getChannelConfigStatus(ch);
+    const channelData = byChannel[ch];
+    channelConfigSummary[ch] = {
+      name: CHANNEL_NAMES[ch],
+      mode: configStatus.mode,
+      enabled: configStatus.enabled,
+      complete: configStatus.complete,
+      missing: configStatus.missing,
+      total: channelData.total,
+      notSent: channelData.not_sent,
+      failed: channelData.failed,
+      allNotSent: channelData.total > 0 && channelData.not_sent === channelData.total
+    };
+  });
+
   return {
     alertId: alert.id,
     alertCode: alert.alertCode,
@@ -799,7 +837,8 @@ function buildNotificationBatchOverview(alert, expectedRecipients, sentResults) 
     byRecipient,
     byRecipientList: byRecipient ? Object.values(byRecipient) : [],
     missingRecipients,
-    unhandledChannels: []
+    unhandledChannels: [],
+    channelConfigSummary
   };
 }
 
@@ -885,7 +924,8 @@ async function getNotificationList(params = {}) {
   const summary = {
     total: count,
     byChannel: {},
-    byStatus: {}
+    byStatus: {},
+    channelConfigSummary: {}
   };
 
   const allNotificationsResult = await Notification.findAll({ where });
@@ -894,12 +934,170 @@ async function getNotificationList(params = {}) {
     summary.byStatus[n.status] = (summary.byStatus[n.status] || 0) + 1;
   });
 
+  ['sms', 'voice', 'wechat', 'email'].forEach(ch => {
+    const configStatus = getChannelConfigStatus(ch);
+    const channelCount = summary.byChannel[ch] || 0;
+    const notSentCount = allNotificationsResult.rows.filter(n => n.channel === ch && n.status === 'not_sent').length;
+    const failedCount = allNotificationsResult.rows.filter(n => n.channel === ch && n.status === 'failed').length;
+    summary.channelConfigSummary[ch] = {
+      name: CHANNEL_NAMES[ch],
+      mode: configStatus.mode,
+      enabled: configStatus.enabled,
+      complete: configStatus.complete,
+      missing: configStatus.missing,
+      total: channelCount,
+      notSent: notSentCount,
+      failed: failedCount,
+      allNotSent: channelCount > 0 && notSentCount === channelCount
+    };
+  });
+
   return {
     total: count,
     page,
     pageSize,
     list: listWithAssociations,
     summary
+  };
+}
+
+async function getNotificationBatchLedger(params = {}) {
+  const {
+    page = 1,
+    pageSize = 20,
+    projectId,
+    alertLevel,
+    startTime,
+    endTime
+  } = params;
+
+  const alertWhere = {};
+  if (projectId) alertWhere.projectId = projectId;
+  if (alertLevel) alertWhere.alertLevel = alertLevel;
+  if (startTime) alertWhere.occurTime = { ...alertWhere.occurTime, $gte: new Date(startTime) };
+  if (endTime) alertWhere.occurTime = { ...alertWhere.occurTime, $lte: new Date(endTime) };
+
+  const { count, rows: alertRows } = await Alert.findAll({
+    where: alertWhere,
+    order: [['occurTime', 'DESC']],
+    limit: pageSize,
+    offset: (page - 1) * pageSize
+  });
+
+  const alertIds = alertRows.map(a => a.id);
+
+  const notificationsResult = alertIds.length > 0
+    ? await Notification.findAll({ where: { alertId: { $in: alertIds } } })
+    : { rows: [] };
+  const notificationsByAlert = {};
+  notificationsResult.rows.forEach(n => {
+    if (!notificationsByAlert[n.alertId]) {
+      notificationsByAlert[n.alertId] = [];
+    }
+    notificationsByAlert[n.alertId].push(n);
+  });
+
+  const { Receipt } = require('../models');
+  const receiptsResult = alertIds.length > 0
+    ? await Receipt.findAll({ where: { alertId: { $in: alertIds } } })
+    : { rows: [] };
+  const receiptsByAlert = {};
+  receiptsResult.rows.forEach(r => {
+    if (!receiptsByAlert[r.alertId]) {
+      receiptsByAlert[r.alertId] = [];
+    }
+    receiptsByAlert[r.alertId].push(r);
+  });
+
+  const ledgerList = alertRows.map(alert => {
+    const notifications = notificationsByAlert[alert.id] || [];
+    const receipts = receiptsByAlert[alert.id] || [];
+
+    const uniqueRecipientIds = new Set(notifications.map(n => n.recipientId));
+    const totalRecipients = uniqueRecipientIds.size;
+
+    const successNotifications = notifications.filter(n => n.status === 'delivered' || n.status === 'sent');
+    const notSentNotifications = notifications.filter(n => n.status === 'not_sent');
+    const failedNotifications = notifications.filter(n => n.status === 'failed');
+
+    const notSentRecipientIds = new Set(notSentNotifications.map(n => n.recipientId));
+    const allFailedRecipientIds = new Set([
+      ...notSentNotifications.map(n => n.recipientId),
+      ...failedNotifications.map(n => n.recipientId)
+    ]);
+
+    const fullyFailedRecipientCount = Array.from(allFailedRecipientIds).filter(rid => {
+      const recipientNotifications = notifications.filter(n => n.recipientId === rid);
+      return recipientNotifications.every(n => n.status === 'not_sent' || n.status === 'failed');
+    }).length;
+
+    const receiptedRecipientIds = new Set(receipts.map(r => r.recipientId));
+    const receiptedCount = receiptedRecipientIds.size;
+    const pendingCount = totalRecipients - receiptedCount;
+
+    let firstReceiptTime = null;
+    let lastReceiptTime = null;
+    let firstResponseMinutes = null;
+    if (receipts.length > 0) {
+      const receiptTimes = receipts.map(r => new Date(r.receiptTime).getTime());
+      firstReceiptTime = new Date(Math.min(...receiptTimes));
+      lastReceiptTime = new Date(Math.max(...receiptTimes));
+      if (alert.occurTime) {
+        firstResponseMinutes = (firstReceiptTime - new Date(alert.occurTime)) / (1000 * 60);
+        firstResponseMinutes = Number(firstResponseMinutes.toFixed(2));
+      }
+    }
+
+    const byChannel = {};
+    notifications.forEach(n => {
+      if (!byChannel[n.channel]) {
+        byChannel[n.channel] = { total: 0, success: 0, not_sent: 0, failed: 0 };
+      }
+      byChannel[n.channel].total++;
+      if (n.status === 'delivered' || n.status === 'sent') byChannel[n.channel].success++;
+      else if (n.status === 'not_sent') byChannel[n.channel].not_sent++;
+      else if (n.status === 'failed') byChannel[n.channel].failed++;
+    });
+
+    return {
+      alertId: alert.id,
+      alertCode: alert.alertCode,
+      alertLevel: alert.alertLevel,
+      alertLevelName: alert.alertLevelName,
+      eventType: alert.eventType,
+      eventTypeName: alert.eventTypeName,
+      occurTime: alert.occurTime,
+      status: alert.status,
+      areaId: alert.areaId,
+      projectId: alert.projectId,
+      notification: {
+        expectedRecipientCount: totalRecipients,
+        totalNotifications: notifications.length,
+        successCount: successNotifications.length,
+        notSentCount: notSentNotifications.length,
+        failedCount: failedNotifications.length,
+        fullyFailedRecipientCount,
+        byChannel
+      },
+      receipt: {
+        totalRecipients,
+        receiptedCount,
+        pendingCount,
+        progress: totalRecipients > 0 ? Math.round((receiptedCount / totalRecipients) * 100) : 0,
+        firstReceiptTime,
+        lastReceiptTime,
+        firstResponseMinutes
+      },
+      hasNotificationIssue: notSentNotifications.length > 0 || failedNotifications.length > 0,
+      hasReceiptDelay: pendingCount > 0 && totalRecipients > 0
+    };
+  });
+
+  return {
+    total: count,
+    page,
+    pageSize,
+    list: ledgerList
   };
 }
 
@@ -958,5 +1156,6 @@ module.exports = {
   getNotificationList,
   getNotificationBatchOverview,
   buildNotificationBatchOverview,
+  getNotificationBatchLedger,
   getChannelConfig
 };

@@ -19,7 +19,8 @@ const defaultData = {
   recipients: [],
   notificationRules: [],
   notifications: [],
-  receipts: []
+  receipts: [],
+  reminders: []
 };
 
 const adapter = new JSONFile(dbPath);

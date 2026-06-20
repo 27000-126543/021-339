@@ -28,7 +28,7 @@ async function runTests() {
   let recipientId = null;
   let notificationId = null;
   let passedTests = 0;
-  let totalTests = 33;
+  let totalTests = 41;
 
   function pass(desc) {
     passedTests++;
@@ -650,6 +650,180 @@ async function runTests() {
     } else {
       console.log('   ℹ️  当前为模拟模式，跳过真实模式未发送验证');
       pass('模拟模式验证通道配置完整性检测通过');
+    }
+
+    console.log('\n📋 测试34: 通知批次台账列表 - 按项目/时间查看每条告警的通知与回执概览');
+    const ledgerResponse = await axios.get(`${BASE_URL}/api/notifications/batch/ledger`, {
+      headers: { 'X-API-Key': API_KEY },
+      params: { projectId, pageSize: 10 }
+    });
+    const ledgerData = ledgerResponse.data.data;
+    if (ledgerData && ledgerData.list && ledgerData.list.length > 0) {
+      const firstItem = ledgerData.list[0];
+      const hasNotification = firstItem.notification && firstItem.notification.totalNotifications > 0;
+      const hasReceipt = firstItem.receipt && typeof firstItem.receipt.progress === 'number';
+      const hasExpected = typeof firstItem.notification?.expectedRecipientCount !== undefined;
+      if (hasNotification && hasReceipt && hasExpected) {
+        pass('通知批次台账列表获取成功');
+        console.log(`   总数: ${ledgerData.total}条, 本页: ${ledgerData.list.length}条`);
+        console.log(`   首条告警: ${firstItem.alertCode} (${firstItem.alertLevelName})`);
+        console.log(`   通知: 应${firstItem.notification.expectedRecipientCount}人/共${firstItem.notification.totalNotifications}条, 成功${firstItem.notification.successCount}, 未发${firstItem.notification.notSentCount}`);
+        console.log(`   回执: ${firstItem.receipt.receiptedCount}/${firstItem.receipt.totalRecipients}人 (${firstItem.receipt.progress}%), 首响: ${firstItem.receipt.firstResponseMinutes || '-'}分钟`);
+        console.log(`   通知异常标记: ${firstItem.hasNotificationIssue ? '是' : '否'}, 回执延迟: ${firstItem.hasReceiptDelay ? '是' : '否'}`);
+      } else {
+        fail('台账数据字段不完整');
+      }
+    } else {
+      fail('台账列表为空');
+    }
+
+    console.log('\n📋 测试35: 批次概览包含通道配置缺失汇总（channelConfigSummary）');
+    const batchOverview2 = batchOverviewResponse.data.data;
+    if (batchOverview2.channelConfigSummary) {
+      const channels = Object.keys(batchOverview2.channelConfigSummary);
+      const hasSms = !!batchOverview2.channelConfigSummary.sms;
+      const hasMissingField = batchOverview2.channelConfigSummary.sms?.missing !== undefined;
+      if (channels.length > 0 && hasSms && hasMissingField) {
+        pass('批次概览包含通道配置缺失汇总');
+        console.log(`   包含通道: ${channels.join(', ')}`);
+        console.log(`   短信通道: 模式=${batchOverview2.channelConfigSummary.sms.mode}, 完整=${batchOverview2.channelConfigSummary.sms.complete}`);
+        if (batchOverview2.channelConfigSummary.sms.missing?.length > 0) {
+          console.log(`   缺失配置: ${batchOverview2.channelConfigSummary.sms.missing.join('; ')}`);
+        }
+      } else {
+        fail('通道配置汇总字段缺失');
+      }
+    } else {
+      fail('缺少 channelConfigSummary 字段');
+    }
+
+    console.log('\n📋 测试36: 通知列表 summary 包含通道配置缺失汇总');
+    const listSummary = notificationsResponse.data.data.summary;
+    if (listSummary.channelConfigSummary) {
+      const hasSms = !!listSummary.channelConfigSummary.sms;
+      const hasMissing = Array.isArray(listSummary.channelConfigSummary.sms?.missing);
+      if (hasSms && hasMissing) {
+        pass('通知列表 summary 包含通道配置缺失汇总');
+        ['sms', 'voice', 'wechat'].forEach(ch => {
+          const cfg = listSummary.channelConfigSummary[ch];
+          if (cfg) {
+            console.log(`   ${cfg.name}: 模式=${cfg.mode}, 总数=${cfg.total}, 未发=${cfg.notSent}, 完整=${cfg.complete}`);
+          }
+        });
+      } else {
+        fail('通知列表通道配置汇总不完整');
+      }
+    } else {
+      fail('通知列表缺少 channelConfigSummary');
+    }
+
+    console.log('\n📋 测试37: 提交催办 - 对未回执人员发起短信催办');
+    const receiptBeforeRemind = await axiosInstance.get(`/api/receipt/alert/${level1AlertId}`);
+    const pendingListData = receiptBeforeRemind.data.data.dutyDispatchView.receiptLists.pending;
+    if (pendingListData && pendingListData.length > 0) {
+      const pendingIds = pendingListData.slice(0, 2).map(p => p.recipientId);
+      const reminderResponse = await axiosInstance.post('/api/receipt/reminder', {
+        alertId: level1AlertId,
+        recipientIds: pendingIds,
+        channels: ['sms'],
+        reason: '超时未回执，请及时处理'
+      });
+      if (reminderResponse.data.success && reminderResponse.data.data.total > 0) {
+        pass('催办提交成功');
+        console.log(`   催办数量: ${reminderResponse.data.data.total}条`);
+        console.log(`   催办通道: 短信`);
+      } else {
+        fail('催办提交失败');
+      }
+    } else {
+      console.log('   ℹ️  没有待回执人员，跳过催办测试（自动通过');
+      pass('无待回执人员，催办测试跳过');
+    }
+
+    console.log('\n📋 测试38: 回执详情包含催办信息（催办次数、最近催办时间）');
+    await new Promise(r => setTimeout(r, 800));
+    const alertReceiptsAfter = await axiosInstance.get(`/api/receipt/alert/${level1AlertId}`);
+    const dutyView = alertReceiptsAfter.data.data.dutyDispatchView;
+    if (dutyView.reminder) {
+      const hasTotal = typeof dutyView.reminder.totalCount !== 'undefined';
+      const pendingWithReminder = dutyView.receiptLists.pending.filter(p => p.reminderCount !== undefined);
+      if (hasTotal && pendingWithReminder.length > 0) {
+        pass('回执详情包含催办信息');
+        console.log(`   催办总数: ${dutyView.reminder.totalCount}条, 成功: ${dutyView.reminder.successCount}条`);
+        console.log(`   覆盖人数: ${dutyView.reminder.recipientCount}人`);
+        const samplePending = dutyView.receiptLists.pending[0];
+        if (samplePending) {
+          console.log(`   待回执示例- ${samplePending.recipientName}: 催办${samplePending.reminderCount}次, 最近: ${samplePending.lastReminderTime ? '有' : '无'}`);
+        }
+      } else {
+        fail('催办信息字段缺失');
+      }
+    } else {
+      fail('dutyDispatchView 缺少 reminder 字段');
+    }
+
+    console.log('\n📋 测试39: 催办统计接口 - 按项目汇总催办效果');
+    const reminderStatsResponse = await axiosInstance.get('/api/receipt/reminder/statistics', {
+      params: { groupBy: 'project' }
+    });
+    const statsData = reminderStatsResponse.data.data;
+    if (statsData.overall && statsData.byProject) {
+      pass('催办统计获取成功');
+      console.log(`   总体: ${statsData.overall.totalReminders}条催办, ${statsData.overall.uniqueAlerts}个告警, ${statsData.overall.uniqueRecipients}人`);
+      console.log(`   成功: ${statsData.overall.successCount}, 失败: ${statsData.overall.failedCount}, 未发: ${statsData.overall.notSentCount}`);
+      if (statsData.byProject.length > 0) {
+        const proj = statsData.byProject[0];
+        console.log(`   ${proj.projectName}: ${proj.totalReminders}条`);
+      }
+    } else {
+      fail('催办统计返回数据不完整');
+    }
+
+    console.log('\n📋 测试40: 催办列表查询');
+    const reminderListResponse = await axiosInstance.get('/api/receipt/reminder/list', {
+      params: { alertId: level1AlertId, pageSize: 10 }
+    });
+    const reminderList = reminderListResponse.data.data;
+    if (reminderList.list && reminderList.total >= 0) {
+      pass('催办列表查询成功');
+      console.log(`   总数: ${reminderList.total}条`);
+      if (reminderList.list[0]) {
+        const first = reminderList.list[0];
+        console.log(`   首条: ${first.recipientName} - ${first.channelName} - ${first.statusName}`);
+      }
+    } else {
+      fail('催办列表查询失败');
+    }
+
+    console.log('\n📋 测试41: 告警推送返回与批次详情口径完全一致');
+    const batchOverviewFromApi = await axiosInstance.get(`/api/notifications/batch/overview/${level1AlertId}`);
+    const alertDetailResp = await axiosInstance.get(`/api/alerts/${level1AlertId}`);
+    const returnBatch = alertDetailResp.data.data.notificationBatch;
+    const apiBatch = batchOverviewFromApi.data.data;
+    if (returnBatch && apiBatch) {
+      const countMatch = returnBatch.totalNotifications === apiBatch.totalNotifications;
+      const expectedMatch = returnBatch.expectedRecipientCount === apiBatch.expectedRecipientCount;
+      const successMatch = returnBatch.successCount === apiBatch.successCount;
+      const hasByChannel = returnBatch.byChannel && apiBatch.byChannel;
+      const hasByRecipient = returnBatch.byRecipientList && apiBatch.byRecipientList;
+      const hasMissing = Array.isArray(returnBatch.missingRecipients) && Array.isArray(apiBatch.missingRecipients);
+      const hasChannelSummary = returnBatch.channelConfigSummary && apiBatch.channelConfigSummary;
+
+      if (countMatch && expectedMatch && successMatch && hasByChannel && hasByRecipient && hasMissing && hasChannelSummary) {
+        pass('告警推送返回与批次详情口径一致');
+        console.log(`   通知数: 详情=${returnBatch.totalNotifications}, 批次接口=${apiBatch.totalNotifications} ✔️`);
+        console.log(`   应通知人数: 详情=${returnBatch.expectedRecipientCount}, 批次接口=${apiBatch.expectedRecipientCount} ✔️`);
+        console.log(`   成功数: 详情=${returnBatch.successCount}, 批次接口=${apiBatch.successCount} ✔️`);
+        console.log(`   未生成通知名单: ${returnBatch.missingRecipients.length}人`);
+        console.log(`   按通道: ${Object.keys(returnBatch.byChannel || {}).join(', ')}`);
+        console.log(`   按人: ${returnBatch.byRecipientList?.length || 0}人`);
+        console.log(`   通道配置汇总: 包含 ✔️`);
+      } else {
+        fail('口径不一致');
+        console.log(`   countMatch=${countMatch}, expectedMatch=${expectedMatch}, successMatch=${successMatch}, hasChannelSummary=${hasChannelSummary}`);
+      }
+    } else {
+      fail('批次概览数据缺失');
     }
 
     console.log('\n' + '='.repeat(60));

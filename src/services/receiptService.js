@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { Op } = require('../config/database');
 const { Receipt, Alert, Notification, Recipient, Project, loadAssociations } = require('../models');
 const { updateAlertReceiptStatus } = require('./notificationService');
+const { getAlertReminderSummary } = require('./reminderService');
 const logger = require('../config/logger');
 require('dotenv').config();
 
@@ -427,6 +428,62 @@ async function getAlertReceipts(alertId) {
     receiptDetailByRecipient[r.recipientId].receipts.push(r);
   });
 
+  const reminderSummary = await getAlertReminderSummary(alertId);
+
+  const reminderByRecipient = {};
+  reminderSummary.byRecipient.forEach(r => {
+    reminderByRecipient[r.recipientId] = r;
+  });
+
+  pendingList.forEach(p => {
+    const reminderInfo = reminderByRecipient[p.recipientId];
+    if (reminderInfo) {
+      p.reminderCount = reminderInfo.totalCount;
+      p.lastReminderTime = reminderInfo.lastReminderTime;
+      p.lastReminderChannel = reminderInfo.lastReminderChannel;
+    } else {
+      p.reminderCount = 0;
+      p.lastReminderTime = null;
+      p.lastReminderChannel = null;
+    }
+  });
+
+  const acknowledgedListWithReminder = acknowledgedList.map(a => {
+    const reminderInfo = reminderByRecipient[a.recipientId];
+    return {
+      ...a,
+      reminderCount: reminderInfo ? reminderInfo.totalCount : 0,
+      lastReminderTime: reminderInfo ? reminderInfo.lastReminderTime : null
+    };
+  });
+  const processingListWithReminder = processingList.map(a => {
+    const reminderInfo = reminderByRecipient[a.recipientId];
+    return {
+      ...a,
+      reminderCount: reminderInfo ? reminderInfo.totalCount : 0,
+      lastReminderTime: reminderInfo ? reminderInfo.lastReminderTime : null
+    };
+  });
+  const falseAlarmListWithReminder = falseAlarmList.map(a => {
+    const reminderInfo = reminderByRecipient[a.recipientId];
+    return {
+      ...a,
+      reminderCount: reminderInfo ? reminderInfo.totalCount : 0,
+      lastReminderTime: reminderInfo ? reminderInfo.lastReminderTime : null
+    };
+  });
+
+  Object.keys(byRoleSummary).forEach(role => {
+    byRoleSummary[role].recipients = byRoleSummary[role].recipients.map(r => {
+      const reminderInfo = reminderByRecipient[r.id];
+      return {
+        ...r,
+        reminderCount: reminderInfo ? reminderInfo.totalCount : 0,
+        lastReminderTime: reminderInfo ? reminderInfo.lastReminderTime : null
+      };
+    });
+  });
+
   const dutyDispatchView = {
     statusSummary: {
       totalRecipients: uniqueRecipients.length,
@@ -444,12 +501,18 @@ async function getAlertReceipts(alertId) {
       lastResponseMinutes: lastResponseMinutes !== null ? Number(lastResponseMinutes.toFixed(2)) : null
     },
     receiptLists: {
-      acknowledged: acknowledgedList,
-      processing: processingList,
-      false_alarm: falseAlarmList,
+      acknowledged: acknowledgedListWithReminder,
+      processing: processingListWithReminder,
+      false_alarm: falseAlarmListWithReminder,
       pending: pendingList
     },
-    byRole: byRoleSummary
+    byRole: byRoleSummary,
+    reminder: {
+      totalCount: reminderSummary.totalCount,
+      successCount: reminderSummary.successCount,
+      recipientCount: reminderSummary.recipientCount,
+      byChannel: reminderSummary.byChannel
+    }
   };
 
   return {
@@ -461,6 +524,7 @@ async function getAlertReceipts(alertId) {
     receiptStatus,
     notificationSummary,
     dutyDispatchView,
+    reminderSummary,
     receiptDetailByRecipient,
     receipts,
     notifications
