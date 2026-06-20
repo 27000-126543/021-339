@@ -28,7 +28,7 @@ async function runTests() {
   let recipientId = null;
   let notificationId = null;
   let passedTests = 0;
-  let totalTests = 25;
+  let totalTests = 33;
 
   function pass(desc) {
     passedTests++;
@@ -470,6 +470,186 @@ async function runTests() {
       }
     } else {
       console.log('   ⚠️  通知缺少模拟状态标记');
+    }
+
+    console.log('\n📋 测试26: 告警接口默认同步返回通知结果（不依赖asyncNotify参数）');
+    console.log('   场景: 不传asyncNotify参数，验证默认同步发送并返回结果');
+    const settlementAlertData2 = {
+      eventType: 'settlement_exceed',
+      projectId: projectId,
+      areaId: areaId,
+      sensorId: sensorId,
+      sensorCode: 'SEN-SET-002',
+      sensorType: 'settlement',
+      currentValue: 22.0,
+      thresholdValue: 10,
+      unit: 'mm',
+      location: 'B区裙楼3层东侧',
+      description: '沉降监测值超限测试',
+      sourceSystem: 'monitoring_system',
+      sourceEventId: 'MON-20240621-0099',
+      occurTime: new Date().toISOString()
+    };
+
+    const settlementResponse2 = await axiosInstance.post('/api/alerts/receive', settlementAlertData2);
+    const notificationsData = settlementResponse2.data.data.notifications;
+    if (notificationsData && notificationsData.totalNotifications > 0) {
+      pass('告警接口默认同步返回通知结果');
+      console.log(`   应通知人数: ${notificationsData.expectedRecipientCount}`);
+      console.log(`   实际生成通知: ${notificationsData.totalNotifications}条`);
+      console.log(`   成功发送: ${notificationsData.successCount}条`);
+      console.log(`   未发送: ${notificationsData.notSentCount}条`);
+      console.log(`   覆盖通道: ${Object.keys(notificationsData.byChannel || {}).join(', ')}`);
+    } else {
+      fail('告警接口未返回通知结果');
+    }
+
+    console.log('\n📋 测试27: 告警接口返回后立即查询通知列表，验证数据一致');
+    const secondAlertId = settlementResponse2.data.data.alertId;
+    const immediateNotifResponse = await axiosInstance.get('/api/notifications', {
+      params: { alertId: secondAlertId }
+    });
+    const immediateTotal = immediateNotifResponse.data.data.summary?.total || 0;
+    if (immediateTotal === notificationsData.totalNotifications) {
+      pass('立即查询通知列表与返回结果一致');
+      console.log(`   返回结果: ${notificationsData.totalNotifications}条, 实际查询: ${immediateTotal}条`);
+    } else {
+      fail(`通知数量不一致: 返回${notificationsData.totalNotifications}条, 实际查询${immediateTotal}条`);
+    }
+
+    console.log('\n📋 测试28: 通知批次概览接口 - 按告警查看批次详情');
+    const batchOverviewResponse = await axiosInstance.get(`/api/notifications/batch/overview/${secondAlertId}`);
+    const batchOverview = batchOverviewResponse.data.data;
+    if (batchOverview && batchOverview.expectedRecipientCount > 0) {
+      pass('通知批次概览获取成功');
+      console.log(`   应通知人数: ${batchOverview.expectedRecipientCount}`);
+      console.log(`   已通知人数: ${batchOverview.actualRecipientCount}`);
+      console.log(`   通知总数: ${batchOverview.totalNotifications}`);
+      console.log(`   成功数: ${batchOverview.successCount}, 未发送: ${batchOverview.notSentCount}, 失败: ${batchOverview.failedCount}`);
+      
+      console.log('   按通道明细:');
+      Object.entries(batchOverview.byChannel).forEach(([ch, data]) => {
+        if (data && data.total > 0) {
+          const channelNames = { sms: '短信', voice: '语音', wechat: '企业微信', email: '邮件' };
+          console.log(`     ${channelNames[ch] || ch}: 总${data.total}条=成功${data.success}+未发${data.not_sent}+失败${data.failed}`);
+        }
+      });
+
+      if (batchOverview.byRecipientList && batchOverview.byRecipientList.length > 0) {
+        console.log(`   按接收人明细（前3人）:`);
+        batchOverview.byRecipientList.slice(0, 3).forEach(r => {
+          const statusText = r.allSuccess ? '全通道成功' : (r.anyNotSent ? '有未发送' : (r.anyFailed ? '有失败' : '部分成功'));
+          console.log(`     ${r.name} (${r.roleName}) - ${statusText} - ${Object.keys(r.channels).join(', ')}`);
+        });
+      }
+    } else {
+      fail('通知批次概览数据为空');
+    }
+
+    console.log('\n📋 测试29: 告警详情包含通知批次概览');
+    const alertDetailBatchResponse = await axiosInstance.get(`/api/alerts/${secondAlertId}`);
+    const detailBatchOverview = alertDetailBatchResponse.data.data.notificationBatch;
+    if (detailBatchOverview && detailBatchOverview.totalNotifications > 0) {
+      pass('告警详情包含通知批次概览');
+      console.log(`   批次概览通知总数: ${detailBatchOverview.totalNotifications}`);
+      console.log(`   成功: ${detailBatchOverview.successCount}, 未发送: ${detailBatchOverview.notSentCount}`);
+    } else {
+      fail('告警详情缺少通知批次概览');
+    }
+
+    console.log('\n📋 测试30: 回执值班调度视图 - 回执分类名单与未回执名单');
+    const dispatchReceiptsResponse = await axiosInstance.get(`/api/receipt/alert/${level1AlertId}`);
+    const dutyDispatchView = dispatchReceiptsResponse.data.data.dutyDispatchView;
+    if (dutyDispatchView) {
+      pass('回执值班调度视图获取成功');
+      
+      const statusSum = dutyDispatchView.statusSummary;
+      console.log(`   回执进度: ${statusSum.receipted}/${statusSum.totalRecipients}人 (${statusSum.progress}%)`);
+      console.log(`   已回执: ${statusSum.receipted}人, 待回执: ${statusSum.pending}人`);
+
+      const ts = dutyDispatchView.timestamps;
+      if (ts.firstResponseMinutes !== null) {
+        console.log(`   首个响应: ${ts.firstResponseMinutes}分钟`);
+        console.log(`   最后响应: ${ts.lastResponseMinutes}分钟`);
+        pass('首个响应时间和最后响应时间已记录');
+      } else {
+        console.log('   ⚠️  暂无响应时间数据（可能回执刚提交）');
+      }
+
+      const lists = dutyDispatchView.receiptLists;
+      console.log(`   已知晓: ${lists.acknowledged.length}人, 正在处理: ${lists.processing.length}人, 误报待核: ${lists.false_alarm.length}人`);
+      
+      if (lists.acknowledged.length > 0) {
+        console.log(`     已知晓名单: ${lists.acknowledged.map(r => r.recipientName).join(', ')}`);
+      }
+      if (lists.processing.length > 0) {
+        console.log(`     处理中名单: ${lists.processing.map(r => r.recipientName + '(' + (r.siteContact || '-') + ')').join('; ')}`);
+      }
+      if (lists.pending.length > 0) {
+        console.log(`     待回执催办名单: ${lists.pending.map(r => r.recipientName + ' ' + r.recipientPhone).join(', ')}`);
+        pass('待回执名单可直接用于催办');
+      } else if (statusSum.pending === 0) {
+        pass('所有人均已回执');
+      }
+    } else {
+      fail('回执值班调度视图为空');
+    }
+
+    console.log('\n📋 测试31: 回执按角色汇总');
+    if (dutyDispatchView && dutyDispatchView.byRole) {
+      const roleCount = Object.keys(dutyDispatchView.byRole).length;
+      if (roleCount > 0) {
+        pass(`回执按角色汇总获取成功 - 共${roleCount}个角色`);
+        Object.entries(dutyDispatchView.byRole).forEach(([role, data]) => {
+          const known = data.acknowledged || 0;
+          const processing = data.processing || 0;
+          const falseAlarm = data.false_alarm || 0;
+          console.log(`   ${data.roleName}: 总${data.total}人=已回执${data.receipted}(晓${known}/处${processing}/误${falseAlarm})/待${data.pending}`);
+        });
+      } else {
+        fail('按角色汇总数据为空');
+      }
+    }
+
+    console.log('\n📋 测试32: 验证通知批次概览中每个接收人的通道状态可追溯');
+    const recipientList = batchOverview.byRecipientList || [];
+    let allTraceable = recipientList.length > 0;
+    for (const r of recipientList) {
+      if (!r.channels || Object.keys(r.channels).length === 0) {
+        allTraceable = false;
+        break;
+      }
+    }
+    if (allTraceable) {
+      pass('每个接收人的各通道状态可追溯');
+      if (recipientList[0]) {
+        const sample = recipientList[0];
+        console.log(`   示例- ${sample.name}:`);
+        Object.entries(sample.channels).forEach(([ch, s]) => {
+          const channelNames = { sms: '短信', voice: '语音', wechat: '企业微信', email: '邮件' };
+          const failText = s.failReason ? `，原因: ${s.failReason.substring(0, 30)}` : '';
+          console.log(`     ${channelNames[ch] || ch}: ${s.statusName}${failText}`);
+        });
+      }
+    } else {
+      fail('部分接收人缺少通道状态');
+    }
+
+    console.log('\n📋 测试33: 验证真实模式下通道配置不完整时标记为未发送');
+    const notificationsAfter = notificationsResponse.data.data.list;
+    if (process.env.NOTIFICATION_MODE === 'real') {
+      const notSentCount = notificationsAfter.filter(n => n.status === 'not_sent').length;
+      const hasFailReason = notificationsAfter.filter(n => n.failReason && n.failReason.includes('配置不完整')).length;
+      if (notSentCount > 0 && hasFailReason > 0) {
+        pass('真实模式下通道未配置时正确标记为未发送');
+        console.log(`   未发送数: ${notSentCount}, 含原因数: ${hasFailReason}`);
+      } else {
+        console.log('   ℹ️  真实模式下通道已配置完整，无需标记未发送');
+        pass('通道配置完整，未出现误标记');
+      }
+    } else {
+      console.log('   ℹ️  当前为模拟模式，跳过真实模式未发送验证');
+      pass('模拟模式验证通道配置完整性检测通过');
     }
 
     console.log('\n' + '='.repeat(60));

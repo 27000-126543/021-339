@@ -5,7 +5,8 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const {
   triggerNotifications,
   getNotificationList,
-  getChannelConfig
+  getChannelConfig,
+  getNotificationBatchOverview
 } = require('../services/notificationService');
 
 router.get('/channels/config', apiKeyAuth, asyncHandler(async (req, res) => {
@@ -14,6 +15,15 @@ router.get('/channels/config', apiKeyAuth, asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: config
+  });
+}));
+
+router.get('/batch/overview/:alertId', apiKeyAuth, asyncHandler(async (req, res) => {
+  const overview = await getNotificationBatchOverview(req.params.alertId);
+
+  res.json({
+    success: true,
+    data: overview
   });
 }));
 

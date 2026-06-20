@@ -271,18 +271,138 @@ async function getAlertReceipts(alertId) {
     notificationSummary.byStatus[n.status] = (notificationSummary.byStatus[n.status] || 0) + 1;
   });
 
-  const uniqueRecipients = new Set(notifications.map(n => n.recipientId));
-  const receiptedRecipients = new Set(receipts.map(r => r.recipientId));
+  const uniqueRecipientsMap = {};
+  notifications.forEach(n => {
+    if (!uniqueRecipientsMap[n.recipientId]) {
+      uniqueRecipientsMap[n.recipientId] = {
+        id: n.recipientId,
+        name: n.recipientName,
+        role: n.recipientRole,
+        roleName: n.recipientRoleName,
+        phone: n.recipientPhone
+      };
+    }
+  });
+  const uniqueRecipients = Object.values(uniqueRecipientsMap);
+
+  const receiptedRecipientsMap = {};
+  receipts.forEach(r => {
+    receiptedRecipientsMap[r.recipientId] = r;
+  });
+  const receiptedRecipientIds = Object.keys(receiptedRecipientsMap);
+
+  const acknowledgedList = [];
+  const processingList = [];
+  const falseAlarmList = [];
+  const receiptByRecipientLatest = {};
+
+  receipts.forEach(r => {
+    const rid = r.recipientId;
+    if (!receiptByRecipientLatest[rid] || new Date(r.receiptTime) > new Date(receiptByRecipientLatest[rid].receiptTime)) {
+      receiptByRecipientLatest[rid] = r;
+    }
+  });
+
+  Object.values(receiptByRecipientLatest).forEach(r => {
+    const entry = {
+      recipientId: r.recipientId,
+      recipientName: r.recipientName,
+      recipientRole: r.recipientRole,
+      recipientRoleName: r.recipientRoleName,
+      recipientPhone: r.recipientPhone,
+      receiptType: r.receiptType,
+      receiptTypeName: r.receiptTypeName,
+      receiptTime: r.receiptTime,
+      siteContact: r.siteContact,
+      siteContactPhone: r.siteContactPhone,
+      remark: r.remark,
+      receiptId: r.id
+    };
+
+    switch (r.receiptType) {
+      case 'acknowledged':
+        acknowledgedList.push(entry);
+        break;
+      case 'processing':
+        processingList.push(entry);
+        break;
+      case 'false_alarm':
+        falseAlarmList.push(entry);
+        break;
+    }
+  });
+
+  const pendingList = uniqueRecipients
+    .filter(r => !receiptedRecipientIds.includes(r.id))
+    .map(r => ({
+      recipientId: r.id,
+      recipientName: r.name,
+      recipientRole: r.role,
+      recipientRoleName: r.roleName,
+      recipientPhone: r.phone,
+      reminderCount: 0,
+      lastReminderTime: null
+    }));
+
+  const byRoleSummary = {};
+  uniqueRecipients.forEach(r => {
+    const role = r.role;
+    if (!byRoleSummary[role]) {
+      byRoleSummary[role] = {
+        role,
+        roleName: r.roleName,
+        total: 0,
+        receipted: 0,
+        pending: 0,
+        acknowledged: 0,
+        processing: 0,
+        false_alarm: 0,
+        recipients: []
+      };
+    }
+    byRoleSummary[role].total++;
+
+    const rid = r.id;
+    const latestReceipt = receiptByRecipientLatest[rid];
+    if (latestReceipt) {
+      byRoleSummary[role].receipted++;
+      byRoleSummary[role][latestReceipt.receiptType] = (byRoleSummary[role][latestReceipt.receiptType] || 0) + 1;
+    } else {
+      byRoleSummary[role].pending++;
+    }
+
+    byRoleSummary[role].recipients.push({
+      id: r.id,
+      name: r.name,
+      phone: r.phone,
+      receiptStatus: latestReceipt ? latestReceipt.receiptType : 'pending',
+      receiptStatusName: latestReceipt ? latestReceipt.receiptTypeName : '待回执',
+      receiptTime: latestReceipt ? latestReceipt.receiptTime : null
+    });
+  });
+
+  const receiptTimes = receipts.map(r => new Date(r.receiptTime).getTime());
+  const firstReceiptTime = receiptTimes.length > 0 ? new Date(Math.min(...receiptTimes)) : null;
+  const lastReceiptTime = receiptTimes.length > 0 ? new Date(Math.max(...receiptTimes)) : null;
+
+  let firstResponseMinutes = null;
+  let lastResponseMinutes = null;
+  if (firstReceiptTime && alert.occurTime) {
+    firstResponseMinutes = (firstReceiptTime - new Date(alert.occurTime)) / (1000 * 60);
+  }
+  if (lastReceiptTime && alert.occurTime) {
+    lastResponseMinutes = (lastReceiptTime - new Date(alert.occurTime)) / (1000 * 60);
+  }
 
   const receiptStatus = {
-    totalRecipients: uniqueRecipients.size,
+    totalRecipients: uniqueRecipients.length,
     totalNotifications: notifications.length,
-    receiptedCount: receiptedRecipients.size,
-    pendingCount: uniqueRecipients.size - receiptedRecipients.size,
+    receiptedCount: receiptedRecipientIds.length,
+    pendingCount: uniqueRecipients.length - receiptedRecipientIds.length,
     byType: {
-      acknowledged: receipts.filter(r => r.receiptType === 'acknowledged').length,
-      processing: receipts.filter(r => r.receiptType === 'processing').length,
-      false_alarm: receipts.filter(r => r.receiptType === 'false_alarm').length
+      acknowledged: acknowledgedList.length,
+      processing: processingList.length,
+      false_alarm: falseAlarmList.length
     },
     byTypeNames: {
       acknowledged: '已知晓',
@@ -298,7 +418,7 @@ async function getAlertReceipts(alertId) {
         recipientId: r.recipientId,
         recipientName: r.recipientName,
         recipientRole: r.recipientRole,
-        latestReceipt: r,
+        latestReceipt: receiptByRecipientLatest[r.recipientId],
         receiptCount: 0,
         receipts: []
       };
@@ -306,6 +426,31 @@ async function getAlertReceipts(alertId) {
     receiptDetailByRecipient[r.recipientId].receiptCount++;
     receiptDetailByRecipient[r.recipientId].receipts.push(r);
   });
+
+  const dutyDispatchView = {
+    statusSummary: {
+      totalRecipients: uniqueRecipients.length,
+      receipted: receiptedRecipientIds.length,
+      pending: pendingList.length,
+      progress: uniqueRecipients.length > 0 
+        ? Math.round((receiptedRecipientIds.length / uniqueRecipients.length) * 100) 
+        : 0
+    },
+    timestamps: {
+      alertOccurTime: alert.occurTime,
+      firstReceiptTime,
+      lastReceiptTime,
+      firstResponseMinutes: firstResponseMinutes !== null ? Number(firstResponseMinutes.toFixed(2)) : null,
+      lastResponseMinutes: lastResponseMinutes !== null ? Number(lastResponseMinutes.toFixed(2)) : null
+    },
+    receiptLists: {
+      acknowledged: acknowledgedList,
+      processing: processingList,
+      false_alarm: falseAlarmList,
+      pending: pendingList
+    },
+    byRole: byRoleSummary
+  };
 
   return {
     alertId,
@@ -315,6 +460,7 @@ async function getAlertReceipts(alertId) {
     alertStatus: alert.status,
     receiptStatus,
     notificationSummary,
+    dutyDispatchView,
     receiptDetailByRecipient,
     receipts,
     notifications

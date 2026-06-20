@@ -71,11 +71,60 @@ function isChannelEnabled(channel) {
   return CHANNEL_CONFIG[channel]?.enabled || false;
 }
 
+function getChannelConfigStatus(channel) {
+  const config = CHANNEL_CONFIG[channel];
+  if (!config) {
+    return { enabled: false, complete: false, missing: ['通道配置不存在'] };
+  }
+
+  if (NOTIFICATION_MODE === 'simulate') {
+    return { enabled: true, complete: true, missing: [], mode: 'simulate' };
+  }
+
+  const missing = [];
+
+  switch (channel) {
+    case 'sms':
+      if (!config.enabled) missing.push('短信通道未启用(设置SMS_ENABLED=true)');
+      if (!config.apiUrl || config.apiUrl === 'https://api.sms-provider.com/send') missing.push('缺少SMS_API_URL');
+      if (!config.apiKey || config.apiKey === 'your_sms_api_key') missing.push('缺少SMS_API_KEY');
+      break;
+    case 'voice':
+      if (!config.enabled) missing.push('语音通道未启用(设置VOICE_ENABLED=true)');
+      if (!config.apiUrl || config.apiUrl === 'https://api.voice-provider.com/call') missing.push('缺少VOICE_API_URL');
+      if (!config.apiKey || config.apiKey === 'your_voice_api_key') missing.push('缺少VOICE_API_KEY');
+      if (!config.templateId || config.templateId === 'alert_template') missing.push('缺少VOICE_TEMPLATE_ID');
+      break;
+    case 'wechat':
+      if (!config.enabled) missing.push('企业微信通道未启用(设置WECOM_ENABLED=true)');
+      if (!config.webhookUrl || config.webhookUrl === 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send') missing.push('缺少WECOM_WEBHOOK_URL');
+      if (!config.key || config.key === 'your_wecom_key') missing.push('缺少WECOM_KEY');
+      break;
+    case 'email':
+      if (!config.enabled) missing.push('邮件通道未启用(设置EMAIL_ENABLED=true)');
+      if (!config.smtpHost) missing.push('缺少EMAIL_SMTP_HOST');
+      if (!config.smtpPort) missing.push('缺少EMAIL_SMTP_PORT');
+      if (!config.user) missing.push('缺少EMAIL_USER');
+      if (!config.pass || config.pass === 'your_email_password') missing.push('缺少EMAIL_PASS');
+      break;
+  }
+
+  return {
+    enabled: config.enabled,
+    complete: missing.length === 0,
+    missing,
+    mode: NOTIFICATION_MODE
+  };
+}
+
 function getChannelStatus(channel) {
   if (NOTIFICATION_MODE === 'simulate') {
     return 'simulated';
   }
-  return CHANNEL_CONFIG[channel]?.enabled ? 'real' : 'disabled';
+  const status = getChannelConfigStatus(channel);
+  if (!status.enabled) return 'disabled';
+  if (!status.complete) return 'incomplete';
+  return 'real';
 }
 
 function generateReceiptToken(notificationId, recipientId, alertId) {
@@ -211,6 +260,7 @@ async function getMatchedRecipients(rules, alert) {
 
 async function sendSms(phone, content, notificationId) {
   const channelStatus = getChannelStatus('sms');
+  const configStatus = getChannelConfigStatus('sms');
   logger.info('发送短信', { phone, notificationId, mode: NOTIFICATION_MODE, channelStatus });
 
   if (NOTIFICATION_MODE === 'simulate') {
@@ -223,13 +273,14 @@ async function sendSms(phone, content, notificationId) {
     };
   }
 
-  if (!CHANNEL_CONFIG.sms.enabled) {
+  if (!configStatus.complete) {
     return {
       success: false,
       simulated: false,
       channel: 'sms',
-      error: '短信通道未启用',
-      status: 'not_sent'
+      error: `短信通道配置不完整: ${configStatus.missing.join('; ')}`,
+      status: 'not_sent',
+      failReason: `短信通道配置不完整: ${configStatus.missing.join('; ')}`
     };
   }
 
@@ -270,6 +321,7 @@ async function sendSms(phone, content, notificationId) {
 
 async function sendVoiceCall(phone, content, notificationId) {
   const channelStatus = getChannelStatus('voice');
+  const configStatus = getChannelConfigStatus('voice');
   logger.info('发起语音呼叫', { phone, notificationId, mode: NOTIFICATION_MODE, channelStatus });
 
   if (NOTIFICATION_MODE === 'simulate') {
@@ -282,13 +334,14 @@ async function sendVoiceCall(phone, content, notificationId) {
     };
   }
 
-  if (!CHANNEL_CONFIG.voice.enabled) {
+  if (!configStatus.complete) {
     return {
       success: false,
       simulated: false,
       channel: 'voice',
-      error: '语音通道未启用',
-      status: 'not_sent'
+      error: `语音通道配置不完整: ${configStatus.missing.join('; ')}`,
+      status: 'not_sent',
+      failReason: `语音通道配置不完整: ${configStatus.missing.join('; ')}`
     };
   }
 
@@ -330,6 +383,7 @@ async function sendVoiceCall(phone, content, notificationId) {
 
 async function sendWechatMessage(recipient, content, notificationId) {
   const channelStatus = getChannelStatus('wechat');
+  const configStatus = getChannelConfigStatus('wechat');
   logger.info('发送企业微信消息', { recipient: recipient.name, notificationId, mode: NOTIFICATION_MODE, channelStatus });
 
   if (NOTIFICATION_MODE === 'simulate') {
@@ -342,13 +396,14 @@ async function sendWechatMessage(recipient, content, notificationId) {
     };
   }
 
-  if (!CHANNEL_CONFIG.wechat.enabled) {
+  if (!configStatus.complete) {
     return {
       success: false,
       simulated: false,
       channel: 'wechat',
-      error: '企业微信通道未启用',
-      status: 'not_sent'
+      error: `企业微信通道配置不完整: ${configStatus.missing.join('; ')}`,
+      status: 'not_sent',
+      failReason: `企业微信通道配置不完整: ${configStatus.missing.join('; ')}`
     };
   }
 
@@ -390,6 +445,7 @@ async function sendWechatMessage(recipient, content, notificationId) {
 
 async function sendEmail(email, content, notificationId) {
   const channelStatus = getChannelStatus('email');
+  const configStatus = getChannelConfigStatus('email');
   logger.info('发送邮件', { email, notificationId, mode: NOTIFICATION_MODE, channelStatus });
 
   if (NOTIFICATION_MODE === 'simulate') {
@@ -402,13 +458,14 @@ async function sendEmail(email, content, notificationId) {
     };
   }
 
-  if (!CHANNEL_CONFIG.email.enabled) {
+  if (!configStatus.complete) {
     return {
       success: false,
       simulated: false,
       channel: 'email',
-      error: '邮件通道未启用',
-      status: 'not_sent'
+      error: `邮件通道配置不完整: ${configStatus.missing.join('; ')}`,
+      status: 'not_sent',
+      failReason: `邮件通道配置不完整: ${configStatus.missing.join('; ')}`
     };
   }
 
@@ -430,15 +487,20 @@ async function sendNotification(alert, recipient, channel, isEscalation = false,
 
   const content = generateNotificationContent(alert, channel, recipient);
   const receiptLink = generateReceiptLink(null, recipient.id, alert.id);
-  const channelEnabled = isChannelEnabled(channel);
+  const channelConfigStatus = getChannelConfigStatus(channel);
   const isSimulated = NOTIFICATION_MODE === 'simulate';
 
   let initialStatus = 'pending';
   let failReason = null;
 
-  if (!channelEnabled && !isSimulated) {
-    initialStatus = 'not_sent';
-    failReason = `${CHANNEL_NAMES[channel]}通道未启用`;
+  if (NOTIFICATION_MODE === 'real') {
+    if (!channelConfigStatus.complete) {
+      initialStatus = 'not_sent';
+      failReason = `${CHANNEL_NAMES[channel]}通道配置不完整: ${channelConfigStatus.missing.join('; ')}`;
+    } else if (!channelConfigStatus.enabled) {
+      initialStatus = 'not_sent';
+      failReason = `${CHANNEL_NAMES[channel]}通道未启用`;
+    }
   }
 
   const notification = await Notification.create({
@@ -458,6 +520,10 @@ async function sendNotification(alert, recipient, channel, isEscalation = false,
     isEscalation,
     escalationLevel,
     failReason,
+    channelConfigStatus: NOTIFICATION_MODE === 'real' ? {
+      complete: channelConfigStatus.complete,
+      missing: channelConfigStatus.missing
+    } : null,
     receiptStatus: 'none'
   });
 
@@ -509,7 +575,7 @@ async function sendNotification(alert, recipient, channel, isEscalation = false,
     statusName: NOTIFICATION_STATUS_NAMES[finalStatus],
     sendTime: new Date(),
     externalId: sendResult.externalId,
-    failReason: sendResult.error,
+    failReason: sendResult.failReason || sendResult.error,
     isSimulated: sendResult.simulated || false
   };
 
@@ -611,18 +677,155 @@ async function triggerNotifications(alertId) {
 
   await updateAlertReceiptStatus(alertId);
 
+  const batchOverview = buildNotificationBatchOverview(alertWithAssociations, recipients, notifications);
+
   logger.info('通知发送完成', { 
     alertId, 
-    recipientCount: recipients.length, 
-    notificationCount: notifications.length 
+    recipientCount: batchOverview.expectedRecipientCount, 
+    notificationCount: batchOverview.totalNotifications,
+    successCount: batchOverview.successCount,
+    notSentCount: batchOverview.notSentCount
   });
 
   return {
     sent: true,
     recipientCount: recipients.length,
     notificationCount: notifications.length,
-    notifications
+    notifications,
+    batchOverview
   };
+}
+
+function buildNotificationBatchOverview(alert, expectedRecipients, sentResults) {
+  const notifications = sentResults.map(r => r.notification);
+  
+  const byChannel = {
+    sms: { total: 0, success: 0, not_sent: 0, failed: 0, recipients: [] },
+    voice: { total: 0, success: 0, not_sent: 0, failed: 0, recipients: [] },
+    wechat: { total: 0, success: 0, not_sent: 0, failed: 0, recipients: [] },
+    email: { total: 0, success: 0, not_sent: 0, failed: 0, recipients: [] }
+  };
+
+  const byRecipient = {};
+
+  notifications.forEach(n => {
+    const channel = n.channel;
+    if (byChannel[channel]) {
+      byChannel[channel].total++;
+      byChannel[channel].recipients.push({
+        id: n.recipientId,
+        name: n.recipientName,
+        role: n.recipientRole,
+        roleName: n.recipientRoleName,
+        phone: n.recipientPhone,
+        status: n.status,
+        statusName: n.statusName,
+        failReason: n.failReason,
+        isSimulated: n.isSimulated,
+        notificationId: n.id
+      });
+
+      if (n.status === 'delivered' || n.status === 'sent') {
+        byChannel[channel].success++;
+      } else if (n.status === 'not_sent') {
+        byChannel[channel].not_sent++;
+      } else if (n.status === 'failed') {
+        byChannel[channel].failed++;
+      }
+    }
+
+    if (!byRecipient[n.recipientId]) {
+      byRecipient[n.recipientId] = {
+        id: n.recipientId,
+        name: n.recipientName,
+        role: n.recipientRole,
+        roleName: n.recipientRoleName,
+        phone: n.recipientPhone,
+        channels: {},
+        allSuccess: true,
+        anyNotSent: false,
+        anyFailed: false
+      };
+    }
+
+    byRecipient[n.recipientId].channels[channel] = {
+      status: n.status,
+      statusName: n.statusName,
+      failReason: n.failReason,
+      isSimulated: n.isSimulated,
+      notificationId: n.id
+    };
+
+    if (n.status === 'not_sent') byRecipient[n.recipientId].anyNotSent = true;
+    if (n.status === 'failed') byRecipient[n.recipientId].anyFailed = true;
+    if (n.status !== 'delivered' && n.status !== 'sent') byRecipient[n.recipientId].allSuccess = false;
+  });
+
+  const expectedRecipientIds = new Set(expectedRecipients.map(r => r.id));
+  const actualRecipientIds = new Set(notifications.map(n => n.recipientId));
+  const missingRecipients = expectedRecipients
+    .filter(r => !actualRecipientIds.has(r.id))
+    .map(r => ({
+      id: r.id,
+      name: r.name,
+      role: r.role,
+      roleName: r.roleName || ROLE_NAMES[r.role] || r.role,
+      phone: r.phone,
+      reason: '未生成任何通知'
+    }));
+
+  let successCount = 0;
+  let notSentCount = 0;
+  let failedCount = 0;
+
+  Object.values(byChannel).forEach(ch => {
+    successCount += ch.success;
+    notSentCount += ch.not_sent;
+    failedCount += ch.failed;
+  });
+
+  return {
+    alertId: alert.id,
+    alertCode: alert.alertCode,
+    alertLevel: alert.alertLevel,
+    alertLevelName: alert.alertLevelName,
+    expectedRecipientCount: expectedRecipients.length,
+    actualRecipientCount: byRecipient ? Object.keys(byRecipient).length : 0,
+    totalNotifications: notifications.length,
+    successCount,
+    notSentCount,
+    failedCount,
+    byChannel,
+    byRecipient,
+    byRecipientList: byRecipient ? Object.values(byRecipient) : [],
+    missingRecipients,
+    unhandledChannels: []
+  };
+}
+
+async function getNotificationBatchOverview(alertId) {
+  const alert = await Alert.findByPk(alertId);
+  if (!alert) {
+    throw new Error(`告警不存在: ${alertId}`);
+  }
+
+  const notificationsResult = await Notification.findAll({
+    where: { alertId },
+    order: [['createdAt', 'ASC']]
+  });
+
+  const notifications = notificationsResult.rows.map(n => ({ notification: n }));
+
+  const uniqueRecipientIds = new Set(notificationsResult.rows.map(n => n.recipientId));
+  const expectedRecipientsResult = await Recipient.findAll({
+    where: {
+      isEnabled: true,
+      projectId: alert.projectId
+    }
+  });
+  const expectedRecipients = expectedRecipientsResult.rows.filter(r => uniqueRecipientIds.has(r.id));
+
+  return buildNotificationBatchOverview(alert, expectedRecipients, notifications);
 }
 
 async function updateAlertReceiptStatus(alertId) {
@@ -739,6 +942,7 @@ module.exports = {
   NOTIFICATION_MODE,
   CHANNEL_CONFIG,
   isChannelEnabled,
+  getChannelConfigStatus,
   getChannelStatus,
   generateReceiptToken,
   generateReceiptLink,
@@ -752,5 +956,7 @@ module.exports = {
   triggerNotifications,
   updateAlertReceiptStatus,
   getNotificationList,
+  getNotificationBatchOverview,
+  buildNotificationBatchOverview,
   getChannelConfig
 };

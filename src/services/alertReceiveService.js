@@ -1,7 +1,7 @@
 const { Alert, Project, Area, Sensor, Notification, loadAssociations } = require('../models');
 const { generateAlertCode } = require('../utils/alertCodeGenerator');
 const { determineAlertLevel, isNightPouring, isPouringActive } = require('./alertLevelService');
-const { triggerNotifications } = require('./notificationService');
+const { triggerNotifications, getNotificationBatchOverview } = require('./notificationService');
 const logger = require('../config/logger');
 
 async function receiveAlert(eventData) {
@@ -83,7 +83,8 @@ async function receiveAlert(eventData) {
     alertLevel: alert.alertLevel 
   });
 
-  const asyncNotify = eventData.asyncNotify !== false;
+  const asyncNotify = eventData.asyncNotify === true;
+  let notificationResult = null;
   
   if (asyncNotify) {
     (async () => {
@@ -96,8 +97,12 @@ async function receiveAlert(eventData) {
     })();
   } else {
     try {
-      const notifyResult = await triggerNotifications(alert.id);
-      logger.info('告警通知同步发送完成', { alertId: alert.id, ...notifyResult });
+      notificationResult = await triggerNotifications(alert.id);
+      logger.info('告警通知同步发送完成', { 
+        alertId: alert.id, 
+        notificationCount: notificationResult.notificationCount,
+        recipientCount: notificationResult.recipientCount 
+      });
     } catch (error) {
       logger.error('同步发送通知失败', { alertId: alert.id, error: error.message });
     }
@@ -113,10 +118,20 @@ async function receiveAlert(eventData) {
     context: levelResult.context
   };
 
-  if (!asyncNotify) {
-    const notificationsResult = await Notification.findAll({ where: { alertId: alert.id } });
-    result.notificationCount = notificationsResult.count;
-    result.notifications = notificationsResult.rows;
+  if (notificationResult) {
+    result.notifications = {
+      expectedRecipientCount: notificationResult.batchOverview?.expectedRecipientCount || notificationResult.recipientCount,
+      actualRecipientCount: notificationResult.batchOverview?.actualRecipientCount,
+      totalNotifications: notificationResult.batchOverview?.totalNotifications || notificationResult.notificationCount,
+      successCount: notificationResult.batchOverview?.successCount || 0,
+      notSentCount: notificationResult.batchOverview?.notSentCount || 0,
+      failedCount: notificationResult.batchOverview?.failedCount || 0,
+      notificationCount: notificationResult.notificationCount,
+      byChannel: notificationResult.batchOverview?.byChannel,
+      byRecipientList: notificationResult.batchOverview?.byRecipientList,
+      missingRecipients: notificationResult.batchOverview?.missingRecipients || []
+    };
+    result.notificationBatch = notificationResult.batchOverview;
   }
 
   return result;
@@ -239,6 +254,9 @@ async function getAlertDetail(alertId) {
     { model: 'Notification', as: 'notifications', foreignKey: 'alertId', include: [{ model: 'Recipient', as: 'recipient' }] },
     { model: 'Receipt', as: 'receipts', foreignKey: 'alertId', include: [{ model: 'Recipient', as: 'recipient' }] }
   ]);
+
+  const notificationBatch = await getNotificationBatchOverview(alertId);
+  alertWithAssociations.notificationBatch = notificationBatch;
 
   return alertWithAssociations;
 }
